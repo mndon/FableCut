@@ -10,6 +10,7 @@ project.backup-*.json
 media/
 exports/
 analysis/
+mcp-data/
 projects_desktops/
 
 # Sound FX are local-only: their source licenses may not allow redistribution.
@@ -23,6 +24,7 @@ SUGGESTIONS.md
 # Repo & CI plumbing that a bundle has no use for
 .git/
 .github/
+test/
 node_modules/
 *.log
 .DS_Store

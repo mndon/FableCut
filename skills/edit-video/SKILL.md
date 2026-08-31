@@ -1,49 +1,52 @@
 ---
-description: Edit video with FableCut — assemble a cut, add titles and captions, grade, add transitions, keyframe animation, speed ramps, and export. Use whenever the user wants to cut, trim, caption, subtitle, grade, or otherwise edit a video, or asks to open/start the video editor.
+description: Produce and edit a FableCut project.json — assemble a cut, add titles and captions, grade, add transitions, keyframe animation, and speed ramps. Use whenever the user wants an MCP-driven video timeline for a FableCut-compatible client.
 ---
 
 # Editing video with FableCut
 
-FableCut is a browser video editor whose entire timeline is one JSON document.
-You edit video by patching that document; the open editor UI hot-reloads within
-~150 ms, so the user watches the timeline rebuild as you work.
+FableCut's MCP service produces independent JSON timelines for client apps.
+Every edit is scoped to an explicit projectId; media entries point to immutable
+upstream asset IDs that the client resolves for playback.
 
 ## Start here, every time
 
-1. **`fablecut_status`** — starts the editor server if it isn't running and
-   returns the URL, the current project summary, and what's in `media/`. Call it
-   before anything else. If the user doesn't have a browser tab open, tell them
-   the URL so they can watch.
-2. **`fablecut_docs`** — the full manual: `project.json` schema, every prop,
+1. Establish the projectId. Reuse the ID already in the conversation; otherwise
+   call **`fablecut_create_project`** once and retain the returned ID for all
+   later calls. There is deliberately no project-list tool.
+2. **`fablecut_status {projectId}`** — validates access and returns the project
+   summary. It does not start the legacy browser editor.
+3. **`fablecut_docs`** — the full manual: `project.json` schema, every prop,
    transitions, text animations, and a recipe book. Request a single section
-   (`{section:"props"}`, `{section:"Recipes"}`) rather than the whole document.
+   (`{projectId,section:"props"}`, `{projectId,section:"Recipes"}`) rather than the whole document.
    Skip it entirely if the schema is already in context.
 
 ## Making edits
 
 **Prefer `fablecut_patch_project`.** It sends only what changes, re-reads the
-latest document internally, and is merge-safe — it will not clobber a tweak the
-user just made in the UI. Batch related changes into one call; ops apply in
+latest document internally, and is merge-safe — it will not clobber another
+client's saved edit. Batch related changes into one call; ops apply in
 order and bump the revision once.
 
 ```
-fablecut_patch_project {ops:[
+fablecut_patch_project {projectId,ops:[
   {op:"updateClip", id:"c_v2", set:{props:{filterPreset:"teal-orange"}}}
 ]}
 ```
 
-Use `fablecut_get_project {compact:true}` to plan — it's roughly 10× smaller
+Use `fablecut_get_project {projectId,compact:true}` to plan — it's roughly 10× smaller
 than the full JSON. Fetch the full document only when you need exact keyframes.
 
 `fablecut_set_project` replaces the whole document and is conflict-checked: if
-the user edited in the UI since your last read, it refuses rather than
-overwriting. On conflict, re-read, re-apply your change, and call it again.
+another client saved since the submitted revision, it refuses rather than
+overwriting. On conflict, re-read, re-apply your change without manually
+bumping revision, and call it again.
 
 ## Getting footage in
 
-`fablecut_import_media` copies a local file into the project and registers it.
-Media entries may omit `duration` — the browser probes it and writes it back, so
-re-read after a moment instead of shelling out to ffprobe.
+`fablecut_import_media {projectId,asset:{assetId,name,kind,duration?,width?,height?}}`
+registers upstream asset metadata. It does not copy files or persist playback
+URLs. Ask the calling application for missing asset IDs or metadata; do not pass
+server-local paths.
 
 ## Things that trip people up
 
@@ -55,6 +58,5 @@ re-read after a moment instead of shelling out to ffprobe.
 - Vary the font per title. Reusing one typeface across a whole edit is the
   single clearest tell of a machine-made cut; `fablecut_docs {section:"Text"}`
   lists the built-in title styles.
-- **Export is user-driven.** The compositor lives in the browser, so you cannot
-  render headlessly. Ask the user to click Export, or run ffmpeg directly
-  against the source files if they just need a file.
+- The MCP service only produces project.json. Preview and export belong to the
+  independent client app that resolves assetId and implements the compositor.

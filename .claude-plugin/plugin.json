@@ -1,8 +1,8 @@
 {
   "name": "fablecut",
   "displayName": "FableCut",
-  "version": "1.7.0",
-  "description": "A browser video editor you can drive from Claude Code. The timeline is one JSON document — patch it and the open editor hot-reloads in ~150 ms. Cuts, keyframes, transitions, kinetic captions, chroma key, speed ramps, and MP4 export via ffmpeg.",
+  "version": "2.0.0",
+  "description": "A multi-project video timeline MCP service with structured project.json output, plus the FableCut browser editor.",
   "author": {
     "name": "Ronak Parmar",
     "url": "https://github.com/ronak-create"

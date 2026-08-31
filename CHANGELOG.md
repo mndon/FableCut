@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Owner-isolated multi-project MCP storage with generated project IDs,
+  schema-versioned project documents, per-project write serialization and
+  structured tool results for independent client applications.
+- Streamable HTTP MCP transport alongside the trusted local stdio adapter; both
+  transports share the same zero-dependency tool core.
+- Upstream `assetId` media registration and bounded temporary HTTPS reference
+  analysis without server-hosted project media.
+
+### Changed
+- Streamable HTTP no longer performs OIDC/JWKS bearer authentication. All HTTP
+  clients use one shared project namespace and deployments must enforce any
+  required access control upstream.
+- `fablecut_analyze_reference` is no longer exposed by the Streamable HTTP
+  transport; it remains available through the trusted local stdio adapter.
+- MCP 2.0 project tools are project-scoped, while `fablecut_create_project`
+  returns a new ID and initial `project.json` and `fablecut_docs` can be called
+  without a projectId.
+- Full project replacement now compares the submitted document revision
+  directly and increments it server-side, removing process/session read state.
+- The legacy browser UI remains a separate single-project `media[].src`
+  workflow and is no longer auto-started by MCP.
+
 ## [1.7.0] - 2026-08-25
 
 The community release — 20 merged pull requests. Audio gets real tracks and real

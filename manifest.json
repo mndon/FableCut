@@ -2,9 +2,9 @@
   "manifest_version": "0.2",
   "name": "fablecut",
   "display_name": "FableCut",
-  "version": "1.7.0",
-  "description": "Zero-dependency browser video editor that AI agents can drive — JSON timeline, MCP tools, live-reloading UI.",
-  "long_description": "FableCut is a Premiere-style non-linear video editor that runs in the browser with zero npm dependencies. An AI agent edits video by patching a single project.json timeline (clips, keyframes, transitions, text animations, filters, speed ramps, adjustment layers) through MCP tools; the open editor UI live-reloads within ~150 ms and exports MP4 via ffmpeg. Includes reference-video analysis (shot cuts, beats, BPM, energy, drop) so agents can remake an edit with new footage.",
+  "version": "2.0.0",
+  "description": "Zero-dependency multi-project video timeline MCP service with a parallel browser editor.",
+  "long_description": "FableCut combines a Premiere-style browser editor with a multi-project MCP service. Agents create and patch schema-versioned project.json timelines through stdio or unauthenticated Streamable HTTP; independent clients consume structured project output and resolve upstream asset IDs. Includes conflict-safe concurrent edits and reference-video analysis.",
   "author": {
     "name": "Ronak Parmar",
     "url": "https://github.com/ronak-create"
@@ -22,17 +22,30 @@
     "entry_point": "mcp-server.js",
     "mcp_config": {
       "command": "node",
-      "args": ["${__dirname}/mcp-server.js"]
+      "args": ["${__dirname}/mcp-server.js"],
+      "env": {
+        "FABLECUT_MCP_DATA_DIR": "${user_config.data_directory}"
+      }
+    }
+  },
+  "user_config": {
+    "data_directory": {
+      "type": "directory",
+      "title": "FableCut MCP data directory",
+      "description": "Persistent project.json storage for the local MCP adapter",
+      "required": true,
+      "default": "${DOCUMENTS}/FableCut MCP"
     }
   },
   "tools": [
-    { "name": "fablecut_status", "description": "Auto-start the editor server and return its URL plus a project summary" },
-    { "name": "fablecut_docs", "description": "Return the full editor manual (project.json schema, props, recipes), optionally a single section" },
-    { "name": "fablecut_get_project", "description": "Read the timeline JSON (compact mode available for token-efficient planning)" },
-    { "name": "fablecut_set_project", "description": "Replace the timeline JSON with optimistic-concurrency conflict detection" },
-    { "name": "fablecut_patch_project", "description": "Apply targeted, merge-safe ops (add/update/remove clip or media, set project fields)" },
-    { "name": "fablecut_import_media", "description": "Copy a local file into the project's media folder and register it" },
-    { "name": "fablecut_analyze_reference", "description": "Analyze a reference video into an edit blueprint: shot cuts, beats, BPM, energy curve, drop; extracts its music" }
+    { "name": "fablecut_create_project", "description": "Create a project and return its generated projectId and project.json" },
+    { "name": "fablecut_status", "description": "Return a selected project summary and MCP service status" },
+    { "name": "fablecut_docs", "description": "Return the project schema and editing manual without requiring a project" },
+    { "name": "fablecut_get_project", "description": "Return project.json as structured content, with compact mode for planning" },
+    { "name": "fablecut_set_project", "description": "Replace project.json with revision-based optimistic concurrency" },
+    { "name": "fablecut_patch_project", "description": "Apply serialized targeted edits to the latest project revision" },
+    { "name": "fablecut_import_media", "description": "Register immutable upstream asset metadata in a project" },
+    { "name": "fablecut_analyze_reference", "description": "Temporarily analyze an upstream reference asset into cuts, beats, BPM, energy and drop" }
   ],
   "compatibility": {
     "runtimes": { "node": ">=18" }

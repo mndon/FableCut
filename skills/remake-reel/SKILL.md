@@ -12,14 +12,16 @@ new footage is yours.
 ## Get the blueprint
 
 ```
-fablecut_analyze_reference {path:"C:\\…\\ref.mp4"}
+fablecut_import_media {projectId,asset:{assetId,name,kind:"video",duration,width,height}}
+fablecut_analyze_reference {projectId,assetId,downloadUrl}
 ```
 
 Needs ffmpeg on PATH. It returns shot boundaries (`cuts`, `shots[]` with a
 per-shot `energy` 0–100), music `beats[]` and `bpm`, a loudness `energy` curve,
-and `drop` — the biggest musical rise. It also extracts the reference's music
-track into the project and registers it as media, so the rebuild can sit on the
-same song.
+and `drop` — the biggest musical rise. `downloadUrl` must be a temporary HTTPS
+URL supplied by the upstream asset system. The service deletes the download and
+returns `music:{assetId,mediaId}` so the client can reuse the original video's
+audio without hosting an extracted copy.
 
 If obvious cuts were missed, lower `threshold`; if camera motion is being read
 as cuts, raise it.

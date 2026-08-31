@@ -20,10 +20,13 @@ jobs:
 
       - name: Syntax-check JavaScript
         run: |
-          for f in server.js app.js mcp-server.js analyze.js paths.js; do
+          for f in server.js app.js mcp-server.js mcp-http-server.js analyze.js paths.js mcp/*.js; do
             echo "checking $f"
             node --check "$f"
           done
+
+      - name: Test MCP core and transports
+        run: node --test
 
       - name: Validate JSON files
         run: |

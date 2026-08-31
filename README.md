@@ -28,12 +28,12 @@
 <https://github.com/user-attachments/assets/2430b854-168b-4a9a-af2e-489e5efa7543>
 
 FableCut is a Premiere-style non-linear video editor that runs entirely in your
-browser — and exposes its whole timeline as one JSON document. Edit it by hand,
-from the UI, or let an AI agent (Claude Code, Claude Desktop, or anything that
-speaks MCP/REST) cut your video for you while you watch the timeline update
-live.
+browser — plus a headless MCP service that produces the same timeline model as
+independent JSON projects for client apps. The browser editor and the MCP
+service are parallel consumers: the local UI and Streamable HTTP projects use
+playable media paths, while the trusted stdio adapter uses upstream asset IDs.
 
-Zero npm dependencies. One `node server.js`. That's it.
+Zero npm dependencies and standard-library Node throughout.
 
 ![FableCut editor](docs/screenshot.png)
 
@@ -45,6 +45,11 @@ tracks, effects, keyframes and transitions — any process that can write JSON
 can edit video, and the open browser UI hot-reloads within ~150 ms via
 server-sent events. A human and an agent can work on the same timeline at the
 same time.
+
+For hosted applications, `mcp-http-server.js` exposes a separate unauthenticated
+Streamable HTTP MCP resource with one shared project namespace. Every project
+tool takes an explicit `projectId`, and clients receive `project.json` as
+structured MCP output instead of relying on the browser UI.
 
 ## Features
 
@@ -158,11 +163,12 @@ same time.
 
 - Give it a reference edit (a reel you like) and get back an **edit blueprint**:
   shot boundaries, music beats + BPM, a loudness curve, per-shot energy, the
-  drop — plus the reference's **music track extracted** into your media, ready
-  to rebuild the same idea with your own footage. Zero extra dependencies
+  drop. The local REST/CLI workflow extracts the music track; the stdio MCP
+  workflow reuses the original upstream asset as its audio source, ready to
+  rebuild the same idea with your own footage. Zero extra dependencies
   (ffmpeg does the decoding; onset/tempo detection is plain Node).
   `node analyze.js ref.mp4`, `POST /api/analyze`, or the
-  `fablecut_analyze_reference` MCP tool.
+  stdio-only `fablecut_analyze_reference` MCP tool.
 
 **Asset library**
 
@@ -204,10 +210,10 @@ you choose. Leave it unset and everything stays in the repo, exactly as before.
 /plugin install fablecut@fablecut
 ```
 
-That registers the MCP server for you and adds two skills — `edit-video` and
-`remake-reel`. Your timeline and footage live in the plugin's own data
-directory, so an update never touches them. Node 18+ and (optionally) ffmpeg
-still need to be on your machine.
+That registers the local stdio MCP adapter and adds two skills — `edit-video`
+and `remake-reel`. MCP projects live under the plugin data directory; upstream
+media remains in your asset system. Node 18+ and (optionally) ffmpeg are still
+required.
 
 ## Driving it with an AI agent
 
@@ -220,10 +226,9 @@ operate the editor end to end.
 > **[FableCut on DeepWiki](https://deepwiki.com/ronak-create/FableCut)**. Ask it
 > questions about the repo in natural language.
 
-Three equivalent control surfaces:
+There are two parallel control families:
 
-1. **MCP** (best for Claude Code / Claude Desktop) — register the bundled
-   zero-dependency MCP server once:
+1. **Multi-project MCP** — register the bundled local stdio adapter:
 
    ```bash
    claude mcp add -s user fablecut -- node "<path-to>/fablecut/mcp-server.js"
@@ -258,13 +263,32 @@ Three equivalent control surfaces:
    }
    ```
 
-   The server is intentionally client-neutral. It speaks MCP over stdio and
-   does not require Claude-specific environment variables. Keep the path
-   absolute, and use Node 18 or newer.
+   Set `FABLECUT_MCP_DATA_DIR` for persistent project storage and optionally
+   `FABLECUT_LOCAL_USER_ID` for a stable local owner. For a shared service, run
+   the Streamable HTTP entry behind TLS:
 
-   Tools: `fablecut_status` (auto-starts the editor), `fablecut_docs`,
-   `fablecut_get_project`, `fablecut_set_project`, `fablecut_patch_project`,
-   `fablecut_import_media`, `fablecut_analyze_reference`.
+   ```bash
+   FABLECUT_MCP_PUBLIC_URL=https://mcp.example.com \
+   FABLECUT_MCP_DATA_DIR=/srv/fablecut \
+   FABLECUT_MCP_HOST=0.0.0.0 node mcp-http-server.js
+   ```
+
+   Connect remote clients to `https://mcp.example.com/mcp`. The HTTP service
+   does not authenticate callers and all clients share one project namespace,
+   so keep it on a trusted network or protect it with an authenticating reverse
+   proxy/API gateway. Call `fablecut_create_project` first; it returns a
+   generated projectId. Get, set, patch and import require that projectId;
+   `fablecut_docs` can be called without one. The HTTP server does not expose
+   the redundant `fablecut_status` or the stdio-only
+   `fablecut_analyze_reference`. `fablecut_get_project` returns the parsed
+   project document in MCP `structuredContent` so a client app can render it
+   directly.
+
+   On Streamable HTTP, `fablecut_import_media` accepts playable `src` values
+   rather than `assetId`, and persists them in media entries so a client can
+   preview the fetched `project.json` locally. The service stores metadata but
+   does not copy or host the media. The trusted stdio adapter keeps its
+   immutable upstream `assetId` contract for reference analysis.
 
    FableCut is also published on the **official MCP registry** as
    [`io.github.ronak-create/fablecut`](https://registry.modelcontextprotocol.io/v0/servers?search=fablecut)
@@ -274,29 +298,28 @@ Three equivalent control surfaces:
    The surface is **token-efficient by design**: agents patch the timeline with
    small ops (`fablecut_patch_project`) instead of round-tripping the whole
    document, read a compact one-line-per-clip summary
-   (`fablecut_get_project {compact:true}`), and fetch only the manual sections
-   they need (`fablecut_docs {section:"props"}`).
-2. **The file** — read `project.json`, modify, bump `revision`, write. The UI
-   live-reloads.
-3. **REST** — `GET/PUT /api/project`, `POST /api/upload`, `GET /api/library`,
-   SSE at `/api/events`. See CLAUDE.md for the full list.
+   (`fablecut_get_project {projectId,compact:true}`), and fetch only the manual
+   sections they need (`fablecut_docs {section:"props"}`).
+2. **Legacy browser editor** — read/write the checkout's `project.json`, or use
+   `GET/PUT /api/project`, `POST /api/upload`, `GET /api/library` and SSE at
+   `/api/events`. This single local project continues to use `media[].src` and
+   is intentionally separate from MCP project storage.
 
 Example: ask Claude Code *"cut these six clips to the beat markers, add a
 teal-orange grade, put a word-pop caption on top and a whoosh on every cut"* —
 and watch the timeline rebuild itself.
 
-Or hand it a reference: *"here's a reel I like — analyze it and remake it with
-my clips, same music"*. The agent calls `fablecut_analyze_reference`, gets the
-blueprint (cuts, beats, BPM, energy, drop, extracted music), and rebuilds the
+Or hand the stdio adapter a reference: *"here's a reel I like — analyze it and
+remake it with my clips, same music"*. The agent calls
+`fablecut_analyze_reference`, gets the
+blueprint (cuts, beats, BPM, energy, drop, original asset music reference), and rebuilds the
 structure shot-for-shot with your footage.
 
-**Conflict-safe concurrent editing**: the UI, the MCP tools, and direct
-`project.json` writes all agree on a `revision` counter. If you edit a clip in
-the UI while an agent is mid-task, the agent's next write is rejected (409 from
-the REST API / a conflict error from `fablecut_set_project`) instead of
-silently overwriting your change. The UI similarly detects when an agent write
-supersedes a not-yet-saved local tweak and tells you with a toast instead of
-dropping it silently.
+**Conflict-safe concurrent editing**: MCP mutations are serialized per project,
+while different projects run concurrently. Patch operations apply to the latest
+document; full `set_project` calls must submit the exact revision they read and
+receive `CONFLICT` if another client saved first. The legacy UI independently
+keeps its existing revision/409 conflict handling.
 
 ## Project layout
 
@@ -307,11 +330,14 @@ app.js           the editor: timeline UI, compositor, keyframes, text engine,
                  SVG rasterizer, chroma key, exporters
 index.html       single-page UI
 style.css        dark editor theme
-mcp-server.js    stdio MCP server exposing the editor to AI agents
+mcp-server.js    trusted local stdio adapter for the multi-project MCP core
+mcp-http-server.js  unauthenticated Streamable HTTP MCP service
+mcp/             project store, validation, protocol and tool core
 analyze.js       reference-video analyzer: shots, beats/BPM, energy, drop,
                  music extraction (module + CLI)
 CLAUDE.md        the agent manual (schema + recipes) — also served by fablecut_docs
-project.json     your timeline (created on first run; gitignored)
+project.json     legacy Web UI timeline (created on first run; gitignored)
+mcp-data/        default MCP project storage (gitignored)
 media/           project footage (gitignored)
 analysis/        cached edit blueprints from /api/analyze (gitignored)
 library/         default assets: elements/ sfx/ svg/ fonts/

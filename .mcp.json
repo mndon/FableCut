@@ -4,7 +4,7 @@
       "command": "node",
       "args": ["${CLAUDE_PLUGIN_ROOT}/mcp-server.js"],
       "env": {
-        "FABLECUT_DATA_DIR": "${CLAUDE_PLUGIN_DATA}"
+        "FABLECUT_MCP_DATA_DIR": "${CLAUDE_PLUGIN_DATA}/mcp"
       }
     }
   }

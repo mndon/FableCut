@@ -46,6 +46,9 @@ It remains **not** hardened for untrusted networks or multi-tenant use:
 
 - The REST API (`/api/*`) has no authentication — anyone who can reach the port
   can read and overwrite `project.json` and upload files into `media/`.
+- The Streamable HTTP MCP endpoint (`mcp-http-server.js`) also has no
+  authentication. All callers share one project namespace, and anyone who can
+  reach it and knows a projectId can read or modify that project.
 - The server reads and writes files under the project directory and shells out to
   `ffmpeg` for export/remux.
 - Do not expose the port publicly. If you must, put it behind your own

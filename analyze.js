@@ -21,14 +21,17 @@ function run(cmd, args, { binary = false } = {}) {
   return new Promise((resolve, reject) => {
     const proc = spawn(cmd, args, { windowsHide: true });
     const out = [], err = [];
+    const timeoutMs = Number(process.env.FABLECUT_FFMPEG_TIMEOUT_MS || 15 * 60_000);
+    let timedOut = false;
+    const timer = setTimeout(() => { timedOut = true; proc.kill("SIGKILL"); }, timeoutMs);
     proc.stdout.on("data", (c) => out.push(c));
     proc.stderr.on("data", (c) => err.push(c));
-    proc.on("error", reject);
-    proc.on("close", (code) => resolve({
+    proc.on("error", (error) => { clearTimeout(timer); reject(error); });
+    proc.on("close", (code) => { clearTimeout(timer); resolve({
       code,
       stdout: binary ? Buffer.concat(out) : Buffer.concat(out).toString("utf8"),
-      stderr: Buffer.concat(err).toString("utf8"),
-    }));
+      stderr: timedOut ? `ffmpeg timed out after ${timeoutMs} ms` : Buffer.concat(err).toString("utf8"),
+    }); });
   });
 }
 
