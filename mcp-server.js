@@ -5,7 +5,8 @@
    Register once for all Claude Code sessions:
      claude mcp add -s user fablecut -- node "<path-to>/fablecut/mcp-server.js"
 
-   Tools: fablecut_status, fablecut_docs, fablecut_get_project,
+   Tools: fablecut_list_projects, fablecut_create_project, fablecut_select_project,
+          fablecut_status, fablecut_docs, fablecut_get_project,
           fablecut_set_project, fablecut_patch_project, fablecut_import_media,
           fablecut_analyze_reference
    ═══════════════════════════════════════════════════════════════════════════ */
@@ -16,7 +17,8 @@ const http = require("http");
 const { spawn, spawnSync } = require("child_process");
 
 const {
-  APP_DIR, DATA_DIR, MEDIA_DIR, ANALYSIS_DIR, LIBRARY_DIR, PROJECT_FILE, ensureDirs,
+  APP_DIR, LIBRARY_DIR, DEFAULT_PROJECT_ID, normalizeProjectId, projectPaths,
+  ensureProject, listProjects, ensureDirs,
 } = require("./paths");
 
 /* ROOT is where the code lives (server.js, CLAUDE.md); the user's timeline and
@@ -28,20 +30,27 @@ const BASE = `http://localhost:${PORT}`;
 
 /* ── Helpers ── */
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-function readProject() {
-  const raw = fs.readFileSync(PROJECT_FILE, "utf8").replace(new RegExp("^\\uFEFF"), "");
+let selectedProjectId = normalizeProjectId(process.env.FABLECUT_PROJECT || DEFAULT_PROJECT_ID);
+function context(projectId) {
+  const p = projectPaths(projectId || selectedProjectId);
+  if (!fs.existsSync(p.projectFile)) throw new Error("No such project: " + p.id);
+  return p;
+}
+function readProject(projectId) {
+  const raw = fs.readFileSync(context(projectId).projectFile, "utf8").replace(new RegExp("^\\uFEFF"), "");
   return JSON.parse(raw);
 }
-function writeProject(doc) {
+function writeProject(doc, projectId) {
   // atomic tmp+rename so the UI's file watcher never sees a half-written doc
-  const tmp = PROJECT_FILE + ".mcp.tmp";
+  const file = context(projectId).projectFile;
+  const tmp = file + ".mcp.tmp";
   fs.writeFileSync(tmp, JSON.stringify(doc, null, 2));
-  fs.renameSync(tmp, PROJECT_FILE);
+  fs.renameSync(tmp, file);
 }
 /* Optimistic concurrency: revision of project.json when this session last read
    the full document. If the file has moved past it by write time, someone else
    (usually the user, in the editor UI) edited in between — refuse to clobber. */
-let lastReadRevision = null;
+const lastReadRevisions = new Map();
 function httpOk(url) {
   return new Promise((resolve) => {
     const req = http.get(url, (r) => { r.resume(); resolve(r.statusCode < 500); });
@@ -50,12 +59,12 @@ function httpOk(url) {
   });
 }
 async function ensureUIServer() {
-  if (await httpOk(BASE + "/api/project")) return true;
+  if (await httpOk(BASE + "/api/project?project=" + encodeURIComponent(selectedProjectId))) return true;
   spawn(process.execPath, [path.join(ROOT, "server.js")],
     { cwd: ROOT, detached: true, stdio: "ignore" }).unref();
   for (let i = 0; i < 12; i++) {
     await sleep(300);
-    if (await httpOk(BASE + "/api/project")) return true;
+    if (await httpOk(BASE + "/api/project?project=" + encodeURIComponent(selectedProjectId))) return true;
   }
   return false;
 }
@@ -74,13 +83,39 @@ function ffprobeDuration(file) {
   } catch { return undefined; }
 }
 const uid = () => Math.random().toString(36).slice(2, 9);
+const projectProp = { type: "string", description: "Project id. Omit to use the MCP session's selected project." };
+function mediaSrc(projectId, name) {
+  return "/projects/" + encodeURIComponent(projectId) + "/media/" + encodeURIComponent(name);
+}
 
 /* ── Tool definitions ── */
 const TOOLS = [
   {
+    name: "fablecut_list_projects",
+    description: "List all FableCut projects and show which one this MCP session currently targets.",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
+    name: "fablecut_create_project",
+    description: "Create an independent project workspace containing project.json, media/, exports/ and analysis/, then select it for this MCP session.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "Display name for the new project" },
+        id: { type: "string", description: "Optional stable lowercase id (letters, numbers, _ and -)" },
+      },
+      required: ["name"],
+    },
+  },
+  {
+    name: "fablecut_select_project",
+    description: "Select the project used by subsequent MCP calls that omit a project id.",
+    inputSchema: { type: "object", properties: { project: projectProp }, required: ["project"] },
+  },
+  {
     name: "fablecut_status",
     description: "FableCut video editor: ensure the editor web server is running (auto-starts it), and get the editor URL, project summary and media library. Call this first in a session.",
-    inputSchema: { type: "object", properties: {} },
+    inputSchema: { type: "object", properties: { projectId: projectProp } },
   },
   {
     name: "fablecut_docs",
@@ -95,7 +130,10 @@ const TOOLS = [
     description: "Get the FableCut project (the timeline document). TOKEN TIP: pass compact:true for a one-line-per-clip summary (ids, tracks, timings, non-default props) — usually all you need to plan an edit; fetch the full JSON only when you must inspect exact keyframes.",
     inputSchema: {
       type: "object",
-      properties: { compact: { type: "boolean", description: "Return a compact human-readable summary instead of the full JSON" } },
+      properties: {
+        compact: { type: "boolean", description: "Return a compact human-readable summary instead of the full JSON" },
+        projectId: projectProp,
+      },
     },
   },
   {
@@ -104,6 +142,7 @@ const TOOLS = [
     inputSchema: {
       type: "object",
       properties: {
+        projectId: projectProp,
         ops: {
           type: "array",
           items: { type: "object" },
@@ -119,6 +158,7 @@ const TOOLS = [
     inputSchema: {
       type: "object",
       properties: {
+        projectId: projectProp,
         project: { type: "object", description: "The complete project document (see fablecut_docs for schema)" },
         force: { type: "boolean", description: "Overwrite even if the project changed since it was last read (discards those external/user changes). Only when the user explicitly asks." },
       },
@@ -131,7 +171,8 @@ const TOOLS = [
     inputSchema: {
       type: "object",
       properties: {
-        path: { type: "string", description: "The reference video: an absolute file path (copied into media/ automatically) or an existing '/media/…' src" },
+        projectId: projectProp,
+        path: { type: "string", description: "The reference video: an absolute file path or an existing project media URL" },
         threshold: { type: "number", description: "Scene-cut sensitivity 0–1 (default: adaptive 0.30→0.20→0.12). Lower it if obvious cuts are missed, raise it if too many false cuts." },
         registerMusic: { type: "boolean", description: "Extract the reference's music and register it as project media (default true)" },
       },
@@ -143,7 +184,10 @@ const TOOLS = [
     description: "Copy a local media file (video/audio/image) into FableCut's media library and register it in the project. Returns the created media entry (use its id in clips).",
     inputSchema: {
       type: "object",
-      properties: { path: { type: "string", description: "Absolute path to the source file on disk" } },
+      properties: {
+        path: { type: "string", description: "Absolute path to the source file on disk" },
+        projectId: projectProp,
+      },
       required: ["path"],
     },
   },
@@ -152,12 +196,34 @@ const TOOLS = [
 /* ── Tool implementations ── */
 async function callTool(name, args) {
   switch (name) {
+    case "fablecut_list_projects": {
+      const rows = listProjects();
+      return rows.map((p) => `${p.id === selectedProjectId ? "*" : " "} ${p.id} — "${p.name}" (revision ${p.revision})`).join("\n") || "No projects.";
+    }
+    case "fablecut_create_project": {
+      const name = String(args.name || "").trim();
+      if (!name) throw new Error("name is required");
+      const stem = String(args.id || name).toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "") || "project";
+      let id = normalizeProjectId(stem.slice(0, 56)), n = 2;
+      while (fs.existsSync(projectPaths(id).dir)) id = normalizeProjectId(`${stem.slice(0, 56)}-${n++}`);
+      const pp = ensureProject(id, name);
+      selectedProjectId = id;
+      return `Created and selected project "${name}" (${id}). Workspace: ${pp.dir}`;
+    }
+    case "fablecut_select_project": {
+      const id = normalizeProjectId(args.project);
+      if (!listProjects().some((p) => p.id === id)) throw new Error("No such project: " + id);
+      selectedProjectId = id;
+      return `Selected project ${id}. Subsequent calls may omit projectId.`;
+    }
     case "fablecut_status": {
+      const pp = context(args.projectId);
+      const projectId = pp.id;
       const up = await ensureUIServer();
-      const proj = readProject();
+      const proj = readProject(projectId);
       const dur = proj.clips.reduce((m, c) => Math.max(m, c.start + c.duration), 0);
-      const files = fs.existsSync(MEDIA_DIR)
-        ? fs.readdirSync(MEDIA_DIR).filter((f) => fs.statSync(path.join(MEDIA_DIR, f)).isFile())
+      const files = fs.existsSync(pp.mediaDir)
+        ? fs.readdirSync(pp.mediaDir).filter((f) => fs.statSync(path.join(pp.mediaDir, f)).isFile())
         : [];
       const libSummary = ["sfx", "elements", "svg", "fonts"].map((d) => {
         const dir = path.join(LIBRARY_DIR, d);
@@ -166,12 +232,13 @@ async function callTool(name, args) {
       }).join(", ");
       const cap = (arr, n) => arr.length > n ? arr.slice(0, n).concat(`… +${arr.length - n} more`) : arr;
       return [
-        `Editor server: ${up ? "RUNNING — open " + BASE + " in a browser to watch edits live" : "FAILED TO START (check node / port " + PORT + ")"}`,
-        `Project: "${proj.name}" — ${proj.width}x${proj.height} @ ${proj.fps}fps, ${proj.clips.length} clip(s), ${dur.toFixed(2)}s, revision ${proj.revision}`,
+        `Editor server: ${up ? "RUNNING — open " + BASE + "/?project=" + encodeURIComponent(projectId) + " in a browser to watch edits live" : "FAILED TO START (check node / port " + PORT + ")"}`,
+        `Project: ${projectId} — "${proj.name}" — ${proj.width}x${proj.height} @ ${proj.fps}fps, ${proj.clips.length} clip(s), ${dur.toFixed(2)}s, revision ${proj.revision}`,
         `Registered media: ${cap(proj.media.map((m) => `${m.id} (${m.kind}, ${m.name}${m.duration ? ", " + m.duration + "s" : ""})`), 25).join("; ") || "none"}`,
         `Files in media/: ${cap(files, 25).join(", ") || "none"}`,
         `Library assets (./library): ${libSummary}`,
-        `Project file: ${PROJECT_FILE}`,
+        `Project workspace: ${pp.dir}`,
+        `Available projects: ${listProjects().map((p) => p.id).join(", ")}`,
         `Tips: fablecut_docs (use \`section\`) for the schema · fablecut_get_project {compact:true} to see the timeline · fablecut_patch_project for edits (cheapest).`,
       ].join("\n");
     }
@@ -186,8 +253,9 @@ async function callTool(name, args) {
         parts.filter((s) => s.startsWith("## ")).map((s) => s.slice(3, s.indexOf("\n"))).join(" · ");
     }
     case "fablecut_get_project": {
-      const doc = readProject();
-      lastReadRevision = doc.revision || 0;
+      const projectId = context(args.projectId).id;
+      const doc = readProject(projectId);
+      lastReadRevisions.set(projectId, doc.revision || 0);
       if (!args.compact) return JSON.stringify(doc);
       // the UI persists default-valued props on every clip; hide them so the
       // compact view only shows what actually deviates
@@ -241,9 +309,10 @@ async function callTool(name, args) {
       return lines.join("\n");
     }
     case "fablecut_patch_project": {
+      const projectId = context(args.projectId).id;
       const ops = args.ops;
       if (!Array.isArray(ops) || !ops.length) throw new Error("`ops` must be a non-empty array");
-      const proj = readProject();
+      const proj = readProject(projectId);
       const notes = [];
       const mergeInto = (target, set) => {
         for (const [k, v] of Object.entries(set || {})) {
@@ -316,11 +385,12 @@ async function callTool(name, args) {
         }
       }
       proj.revision = (proj.revision || 0) + 1;
-      writeProject(proj);
-      lastReadRevision = proj.revision;
-      return `Patched (revision ${proj.revision}): ${notes.join(" ")}. Now ${proj.clips.length} clip(s), ${proj.media.length} media. UI hot-reloaded.`;
+      writeProject(proj, projectId);
+      lastReadRevisions.set(projectId, proj.revision);
+      return `Patched ${projectId} (revision ${proj.revision}): ${notes.join(" ")}. Now ${proj.clips.length} clip(s), ${proj.media.length} media. UI hot-reloaded.`;
     }
     case "fablecut_set_project": {
+      const projectId = context(args.projectId).id;
       const doc = args.project;
       if (!doc || typeof doc !== "object") throw new Error("`project` must be an object");
       if (!Array.isArray(doc.clips) || !Array.isArray(doc.media))
@@ -332,11 +402,12 @@ async function callTool(name, args) {
           throw new Error(`clip ${c.id} references unknown mediaId ${c.mediaId}`);
       }
       let cur = { revision: 0 };
-      try { cur = readProject(); } catch {}
+      try { cur = readProject(projectId); } catch {}
       const curRev = cur.revision || 0;
       // strict check when this session read via the tool; otherwise fall back to
       // the revision baked into the submitted doc (e.g. it was read as a file)
-      const stale = lastReadRevision !== null
+      const lastReadRevision = lastReadRevisions.get(projectId);
+      const stale = lastReadRevision !== undefined
         ? curRev !== lastReadRevision
         : (doc.revision || 0) < curRev;
       if (stale && !args.force) {
@@ -348,25 +419,28 @@ async function callTool(name, args) {
           `Pass force:true only if the user explicitly wants those changes discarded.`);
       }
       doc.revision = Math.max(curRev + 1, (doc.revision || 0));
-      writeProject(doc);
-      lastReadRevision = doc.revision;
-      return `Saved (revision ${doc.revision}). ${doc.clips.length} clip(s). The editor UI (if open at ${BASE}) has hot-reloaded.`;
+      writeProject(doc, projectId);
+      lastReadRevisions.set(projectId, doc.revision);
+      return `Saved ${projectId} (revision ${doc.revision}). ${doc.clips.length} clip(s). The editor UI has hot-reloaded.`;
     }
     case "fablecut_analyze_reference": {
+      const pp = context(args.projectId), projectId = pp.id;
       let src = args.path || "";
-      let file = /^\/media\//i.test(src)
-        ? path.join(MEDIA_DIR, decodeURIComponent(src.replace(/^\/media\//i, "")))
-        : src;
+      const projectUrl = /^\/projects\/([a-z0-9_-]+)\/media\/(.+)$/i.exec(src);
+      if (projectUrl && normalizeProjectId(projectUrl[1]) !== projectId)
+        throw new Error(`Media URL belongs to project ${projectUrl[1]}, not ${projectId}`);
+      let file = projectUrl || /^\/media\//i.test(src)
+        ? path.join(pp.mediaDir, path.basename(decodeURIComponent(src))) : src;
       if (!file || !fs.existsSync(file) || !fs.statSync(file).isFile())
         throw new Error("File not found: " + src);
       // keep the reference inside media/ so the user can preview it in the UI
-      if (path.dirname(path.resolve(file)).toLowerCase() !== MEDIA_DIR.toLowerCase()) {
-        if (!fs.existsSync(MEDIA_DIR)) fs.mkdirSync(MEDIA_DIR);
+      if (path.dirname(path.resolve(file)).toLowerCase() !== pp.mediaDir.toLowerCase()) {
+        if (!fs.existsSync(pp.mediaDir)) fs.mkdirSync(pp.mediaDir);
         const ext = path.extname(file);
         const stem = path.basename(file, ext).replace(/[^\w.\- ()\[\]]+/g, "_");
-        let target = path.join(MEDIA_DIR, stem + ext);
+        let target = path.join(pp.mediaDir, stem + ext);
         let i = 1;
-        while (fs.existsSync(target)) target = path.join(MEDIA_DIR, `${stem}_${i++}${ext}`);
+        while (fs.existsSync(target)) target = path.join(pp.mediaDir, `${stem}_${i++}${ext}`);
         fs.copyFileSync(file, target);
         file = target;
       }
@@ -374,27 +448,27 @@ async function callTool(name, args) {
       const bp = await analyze(file, {
         threshold: args.threshold,
         music: args.registerMusic !== false,
-        musicDir: MEDIA_DIR,
-        srcUrl: "/media/" + encodeURIComponent(path.basename(file)),
+        musicDir: pp.mediaDir,
+        srcUrl: mediaSrc(projectId, path.basename(file)),
       });
       let musicNote = "Reference has no audio track — no music extracted.";
       if (bp.music) {
-        bp.music.src = "/media/" + encodeURIComponent(bp.music.name);
+        bp.music.src = mediaSrc(projectId, bp.music.name);
         // merge-safe append, same protocol as fablecut_import_media
         const entry = {
           id: "m_" + uid(), name: bp.music.name, kind: "audio",
           src: bp.music.src, duration: bp.duration,
         };
-        const proj = readProject();
-        const wasCurrent = lastReadRevision === (proj.revision || 0);
+        const proj = readProject(projectId);
+        const wasCurrent = lastReadRevisions.get(projectId) === (proj.revision || 0);
         proj.media.push(entry);
         proj.revision = (proj.revision || 0) + 1;
-        writeProject(proj);
-        if (wasCurrent) lastReadRevision = proj.revision;
+        writeProject(proj, projectId);
+        if (wasCurrent) lastReadRevisions.set(projectId, proj.revision);
         bp.music.mediaId = entry.id;
         musicNote = `Music extracted and registered as media "${entry.id}" — place it on A1 (in:0, duration:${bp.duration}).`;
       }
-      const dir = ANALYSIS_DIR;
+      const dir = pp.analysisDir;
       fs.mkdirSync(dir, { recursive: true });
       fs.writeFileSync(path.join(dir, path.basename(file, path.extname(file)) + ".json"),
         JSON.stringify(bp, null, 2));
@@ -404,36 +478,37 @@ async function callTool(name, args) {
       ].join("\n");
     }
     case "fablecut_import_media": {
+      const pp = context(args.projectId), projectId = pp.id;
       const src = args.path;
       if (!src || !fs.existsSync(src) || !fs.statSync(src).isFile())
         throw new Error("File not found: " + src);
       const ext = path.extname(src).toLowerCase();
       const kind = KIND_BY_EXT[ext];
       if (!kind) throw new Error(`Unsupported extension ${ext}`);
-      if (!fs.existsSync(MEDIA_DIR)) fs.mkdirSync(MEDIA_DIR);
+      if (!fs.existsSync(pp.mediaDir)) fs.mkdirSync(pp.mediaDir);
       let base = path.basename(src).replace(/[^\w.\- ()\[\]]+/g, "_");
-      let target = path.join(MEDIA_DIR, base);
+      let target = path.join(pp.mediaDir, base);
       let i = 1;
       const stem = path.basename(base, ext);
-      while (fs.existsSync(target)) target = path.join(MEDIA_DIR, `${stem}_${i++}${ext}`);
+      while (fs.existsSync(target)) target = path.join(pp.mediaDir, `${stem}_${i++}${ext}`);
       fs.copyFileSync(src, target);
       const entry = {
         id: "m_" + uid(),
         name: path.basename(target),
         kind,
-        src: "/media/" + encodeURIComponent(path.basename(target)),
+        src: mediaSrc(projectId, path.basename(target)),
         duration: kind === "image" ? undefined : ffprobeDuration(target),
       };
-      const proj = readProject();
+      const proj = readProject(projectId);
       // import only appends a media entry (never touches clips), so it merges
       // into the live document; keep lastReadRevision in step only if it
       // already was — otherwise a later set_project must still re-read
-      const wasCurrent = lastReadRevision === (proj.revision || 0);
+      const wasCurrent = lastReadRevisions.get(projectId) === (proj.revision || 0);
       proj.media.push(entry);
       proj.revision = (proj.revision || 0) + 1;
-      writeProject(proj);
-      if (wasCurrent) lastReadRevision = proj.revision;
-      return `Imported → ${JSON.stringify(entry)}\n` +
+      writeProject(proj, projectId);
+      if (wasCurrent) lastReadRevisions.set(projectId, proj.revision);
+      return `Imported into ${projectId} → ${JSON.stringify(entry)}\n` +
         (entry.duration == null && kind !== "image"
           ? "Note: duration unknown (no ffprobe). The browser UI will probe and fill it in; re-read the project before trimming this media."
           : "Ready to use in clips via mediaId.");

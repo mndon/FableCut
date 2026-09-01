@@ -33,6 +33,10 @@ from the UI, or let an AI agent (Claude Code, Claude Desktop, or anything that
 speaks MCP/REST) cut your video for you while you watch the timeline update
 live.
 
+Projects are isolated workspaces: each gets its own `project.json`, media,
+analysis cache, and exports. Use the top-bar picker, or open different
+`/?project=<id>` URLs in separate tabs, to edit several projects at once.
+
 Zero npm dependencies. One `node server.js`. That's it.
 
 ![FableCut editor](docs/screenshot.png)
@@ -190,12 +194,13 @@ removal fetches its model from a CDN on first use.
 The server binds **127.0.0.1 only** (v1.3.1+). To use it from another device on
 your LAN, opt in explicitly: `HOST=0.0.0.0 FABLECUT_ALLOWED_HOSTS=<your-ip> node server.js`.
 
-Drop media into the window (or `./media/`), drag clips onto the timeline, edit,
+Create or select a project, drop media into the window, drag clips onto the timeline, edit,
 export.
 
-To keep your work outside the checkout, set **`FABLECUT_DATA_DIR`** — it moves
-`project.json`, `media/`, `exports/`, `analysis/` and `library/` to a directory
-you choose. Leave it unset and everything stays in the repo, exactly as before.
+Each project lives under `projects/<id>/` with its own `project.json`, `media/`,
+`exports/`, and `analysis/`; `library/` is shared. To keep all work outside the
+checkout, set **`FABLECUT_DATA_DIR`**. Existing single-project data is migrated
+once to `projects/default/`.
 
 ### Or install it as a Claude Code plugin
 
@@ -263,6 +268,7 @@ Three equivalent control surfaces:
    absolute, and use Node 18 or newer.
 
    Tools: `fablecut_status` (auto-starts the editor), `fablecut_docs`,
+   `fablecut_list_projects`, `fablecut_create_project`, `fablecut_select_project`,
    `fablecut_get_project`, `fablecut_set_project`, `fablecut_patch_project`,
    `fablecut_import_media`, `fablecut_analyze_reference`.
 
@@ -276,10 +282,11 @@ Three equivalent control surfaces:
    document, read a compact one-line-per-clip summary
    (`fablecut_get_project {compact:true}`), and fetch only the manual sections
    they need (`fablecut_docs {section:"props"}`).
-2. **The file** — read `project.json`, modify, bump `revision`, write. The UI
+2. **The file** — read `projects/<id>/project.json`, modify, bump `revision`, write. The UI
    live-reloads.
-3. **REST** — `GET/PUT /api/project`, `POST /api/upload`, `GET /api/library`,
-   SSE at `/api/events`. See CLAUDE.md for the full list.
+3. **REST** — list/create with `GET/POST /api/projects`; project-scoped calls use
+   `?project=<id>` on `GET/PUT /api/project`, `POST /api/upload`, and `/api/events`.
+   See CLAUDE.md for the full list.
 
 Example: ask Claude Code *"cut these six clips to the beat markers, add a
 teal-orange grade, put a word-pop caption on top and a whoosh on every cut"* —
@@ -311,11 +318,12 @@ mcp-server.js    stdio MCP server exposing the editor to AI agents
 analyze.js       reference-video analyzer: shots, beats/BPM, energy, drop,
                  music extraction (module + CLI)
 CLAUDE.md        the agent manual (schema + recipes) — also served by fablecut_docs
-project.json     your timeline (created on first run; gitignored)
-media/           project footage (gitignored)
-analysis/        cached edit blueprints from /api/analyze (gitignored)
+projects/        independent project workspaces (gitignored)
+  <id>/project.json  timeline
+  <id>/media/        project footage
+  <id>/analysis/     cached edit blueprints
+  <id>/exports/      finished renders
 library/         default assets: elements/ sfx/ svg/ fonts/
-exports/         finished renders (gitignored)
 ```
 
 ## Authoring animated SVG overlays

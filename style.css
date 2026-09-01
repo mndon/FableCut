@@ -157,9 +157,26 @@ body.resizing-panels * {
 
 .topbar-center {
   flex: 1;
-  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   color: var(--dim);
 }
+
+.project-select {
+  min-width: 150px;
+  max-width: 280px;
+  height: 28px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 0 28px 0 9px;
+  background: var(--panel-2);
+  color: var(--text);
+  font: inherit;
+}
+
+.connection-status { font-size: 11px; white-space: nowrap; }
 
 .topbar-right {
   display: flex;

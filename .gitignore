@@ -1,4 +1,5 @@
 # Runtime user data — recreated automatically
+projects/
 project.json
 media/*
 !media/.gitkeep
@@ -25,3 +26,4 @@ Thumbs.db
 project-kesarix-backup-rev197.json
 
 projects_desktops/
+.idea

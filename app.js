@@ -1,7 +1,7 @@
 /* ═══════════════════════════════════════════════════════════════════════════
    FableCut — a browser-based non-linear video editor
    Works standalone (open index.html) or connected to server.js, which adds
-   persistent projects (project.json), a media library folder, and a REST API
+   independent project workspaces, project-local media, and a REST API
    so external tools (e.g. Claude Code) can edit the timeline programmatically.
    ═══════════════════════════════════════════════════════════════════════════ */
 "use strict";
@@ -36,6 +36,12 @@ const ZOOM_MIN = 1;
 const ZOOM_MAX = 300;
 const TIMELINE_PAD_SEC = 15; // trailing empty seconds in the scrollable content
 const TIMELINE_FIT_FILL = 0.95; // ⇧Z / Fit — clip content fills this fraction of the viewport
+const PROJECT_KEY = "fablecut-project";
+let activeProjectId = new URLSearchParams(location.search).get("project") || localStorage.getItem(PROJECT_KEY) || "default";
+if (!/^[a-z0-9][a-z0-9_-]{0,63}$/.test(activeProjectId)) activeProjectId = "default";
+function projectApi(path) {
+  return path + (path.includes("?") ? "&" : "?") + "project=" + encodeURIComponent(activeProjectId);
+}
 
 const DEFAULT_PROPS = {
   x: 0, y: 0, scale: 1, rotation: 0, opacity: 1, volume: 1,
@@ -321,7 +327,7 @@ const els = {
   btnAudioHold: $("btnAudioHold"),
   exportOverlay: $("exportOverlay"), exportProgress: $("exportProgress"),
   exportTitle: $("exportTitle"), exportNote: $("exportNote"),
-  projectName: $("projectName"),
+  projectName: $("projectName"), projectSelect: $("projectSelect"), btnNewProject: $("btnNewProject"),
   aspectSel: $("aspectSel"), fpsSel: $("fpsSel"), btnGuides: $("btnGuides"), btnZoom100: $("btnZoom100"),
   safeOverlay: $("safeOverlay"), btnSpeed: $("btnSpeed"),
   monitorStage: $("monitorStage"), monitorScroll: $("monitorScroll"),
@@ -434,20 +440,58 @@ function isTypingTarget(el) {
 }
 
 /* ═══════════════════════ SERVER SYNC (optional) ═══════════════════════ */
+async function loadProjectCatalog() {
+  const res = await fetch("/api/projects", { cache: "no-store" });
+  if (!res.ok) throw new Error("projects unavailable");
+  const projects = await res.json();
+  if (projects.length && !projects.some((p) => p.id === activeProjectId)) {
+    activeProjectId = projects.find((p) => p.id === "default")?.id || projects[0].id;
+  }
+  localStorage.setItem(PROJECT_KEY, activeProjectId);
+  const currentUrl = new URL(location.href);
+  currentUrl.searchParams.set("project", activeProjectId);
+  history.replaceState(null, "", currentUrl);
+  els.projectSelect.replaceChildren(...projects.map((p) => {
+    const o = document.createElement("option");
+    o.value = p.id; o.textContent = p.name; o.selected = p.id === activeProjectId;
+    return o;
+  }));
+}
+function openProject(id) {
+  localStorage.setItem(PROJECT_KEY, id);
+  const url = new URL(location.href);
+  url.searchParams.set("project", id);
+  location.href = url.toString();
+}
+els.projectSelect.addEventListener("change", () => openProject(els.projectSelect.value));
+els.btnNewProject.addEventListener("click", async () => {
+  const name = prompt("Project name", "Untitled Project");
+  if (name == null || !name.trim()) return;
+  try {
+    const res = await fetch("/api/projects", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: name.trim() }),
+    });
+    const created = await res.json();
+    if (!res.ok) throw new Error(created.error || "create failed");
+    openProject(created.id);
+  } catch (e) { alert("Couldn't create project: " + e.message); }
+});
 async function connectServer() {
   try {
-    const res = await fetch("/api/project", { cache: "no-store" });
+    await loadProjectCatalog();
+    const res = await fetch(projectApi("/api/project"), { cache: "no-store" });
     if (!res.ok) throw 0;
     const data = await res.json();
     applyProject(data);
     state.connected = true;
-    els.projectName.textContent = project.name + "  ·  🟢 connected";
+    els.projectName.textContent = "🟢 connected";
     listenSSE();
     fetch("/api/export/ffmpeg").then((r) => r.json())
       .then((j) => { state.ffmpeg = !!j.available; }).catch(() => { });
   } catch {
     state.connected = false;
-    els.projectName.textContent = project.name + "  ·  ⚪ local session";
+    els.projectName.textContent = "⚪ local session";
   }
   await probeMissingMeta();
 }
@@ -593,6 +637,8 @@ function applyProject(data) {
     outPoint: wa.outPoint,
     disabledTracks,
   });
+  const selected = [...els.projectSelect.options].find((o) => o.value === activeProjectId);
+  if (selected) selected.textContent = project.name;
   const folderIds = new Set(project.folders.map((f) => f.id));
   for (const m of project.media) {
     if (m.folderId && !folderIds.has(m.folderId)) m.folderId = null;
@@ -639,7 +685,7 @@ function scheduleSave() {
     project.revision++;
     const body = JSON.stringify(projectJSON(), null, 2);
     try {
-      const res = await fetch("/api/project", { method: "PUT", headers: { "Content-Type": "application/json" }, body });
+      const res = await fetch(projectApi("/api/project"), { method: "PUT", headers: { "Content-Type": "application/json" }, body });
       if (res.status === 409) {
         // an external tool saved a newer revision while this change was pending
         await syncFromServer(true);
@@ -669,8 +715,11 @@ function projectJSON() {
   };
 }
 function listenSSE() {
-  const es = new EventSource("/api/events");
-  es.onmessage = () => syncFromServer();
+  const es = new EventSource(projectApi("/api/events"));
+  es.onmessage = (e) => {
+    if (e.data === "projects") loadProjectCatalog().catch(() => { });
+    else syncFromServer();
+  };
 }
 /* Pull the server's project if it moved past our revision (an external tool —
    e.g. Claude — wrote it). Our own saves land at our exact local revision, so
@@ -682,7 +731,7 @@ async function syncFromServer(force) {
   if (state.binTab !== "project") fetchLibrary(state.binTab).then(renderLibrary);
   loadLibraryFonts();
   try {
-    const res = await fetch("/api/project", { cache: "no-store" });
+    const res = await fetch(projectApi("/api/project"), { cache: "no-store" });
     if (!res.ok) return;
     const data = await res.json();
     if (!data || !Array.isArray(data.clips)) return;
@@ -846,7 +895,7 @@ async function importFiles(fileList) {
     let src, transient = false;
     if (state.connected) {
       try {
-        const res = await fetch("/api/upload?name=" + encodeURIComponent(file.name), { method: "POST", body: file });
+        const res = await fetch(projectApi("/api/upload?name=" + encodeURIComponent(file.name)), { method: "POST", body: file });
         if (!res.ok) throw new Error("upload " + res.status);
         src = (await res.json()).src;
       } catch { src = URL.createObjectURL(file); transient = true; }
@@ -5346,7 +5395,7 @@ async function fastExport() {
     els.exportTitle.textContent = "Mixing audio…";
     const wav = await renderAudioMix(dur);
     if (renderCancelled) throw new Error("cancelled");
-    const begin = await fetch("/api/export/begin", {
+    const begin = await fetch(projectApi("/api/export/begin"), {
       method: "POST", body: JSON.stringify({ fps, name: project.name.replace(/[^\w\- ]+/g, "") || "export" }),
     }).then((r) => r.json());
     if (!begin.id) throw new Error(begin.error || "export begin failed");

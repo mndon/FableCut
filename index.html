@@ -15,7 +15,11 @@
   <!-- ══════════ TOP BAR ══════════ -->
   <header class="topbar">
     <div class="logo"><span class="logo-mark">▶</span> Fable<b>Cut</b></div>
-    <div class="topbar-center" id="projectName">Untitled Project</div>
+    <div class="topbar-center">
+      <select id="projectSelect" class="project-select" title="Open project"></select>
+      <button type="button" class="btn tiny" id="btnNewProject" title="Create a project">＋ Project</button>
+      <span id="projectName" class="connection-status">⚪ local session</span>
+    </div>
     <div class="topbar-right">
       <span class="layout-tools">
         <button type="button" class="btn tiny" id="btnLayoutReset" title="Restore default layout">⊡ Layout</button>

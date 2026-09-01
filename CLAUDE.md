@@ -16,12 +16,14 @@ Register the MCP server (`mcp-server.js`) once at user scope as `fablecut`:
 Every Claude Code session then has these tools:
 
 - `fablecut_status` — auto-starts the editor server, returns URL + project summary. Call first.
+- `fablecut_list_projects` / `fablecut_create_project` / `fablecut_select_project`
+  — manage independent project workspaces. Selection is local to the MCP process.
 - `fablecut_docs` — returns this document (`section: "…"` returns only matching `## ` sections).
 - `fablecut_get_project` / `fablecut_set_project` — read / replace the timeline JSON.
   `fablecut_get_project {compact:true}` returns a one-line-per-clip summary instead.
 - `fablecut_patch_project` — apply targeted ops (add/update/remove clip/media,
   set project fields) without round-tripping the document. **Prefer this for edits.**
-- `fablecut_import_media` — copy a local file into `./media/` and register it.
+- `fablecut_import_media` — copy a local file into the selected project's `media/` and register it.
 - `fablecut_analyze_reference` — turn a reference video into an edit blueprint
   (shots, beats, BPM, energy, drop) + extract its music. See "Remake a reference video".
 
@@ -65,15 +67,30 @@ Direct file editing of `project.json` (below) works too and is equivalent.
 Installing as a Claude Code plugin (`/plugin marketplace add ronak-create/FableCut`,
 then `/plugin install fablecut@fablecut`) does the registration for you.
 
-### Where the files are
+### Projects and where the files are
 
-`project.json`, `media/`, `exports/`, `analysis/` and `library/` normally sit in
-the repo next to `server.js`. Set **`FABLECUT_DATA_DIR`** to move all five
-somewhere else; the code and the static app files stay in the install directory
-either way. The plugin sets this so a plugin update can replace the install
-directory without touching anyone's timeline or footage. **Don't assume
-`project.json` is beside `mcp-server.js`** — call `fablecut_status`, which
-reports the real paths.
+FableCut supports multiple projects at once. Each project has a stable lowercase
+ID and its own workspace under `projects/<id>/`:
+
+```
+projects/<id>/project.json
+projects/<id>/media/
+projects/<id>/exports/
+projects/<id>/analysis/
+library/                       # shared reusable assets
+```
+
+Use the project picker in the top bar; opening `/?project=<id>` in separate tabs
+allows simultaneous editing. REST calls take `?project=<id>`. MCP editing tools
+take optional `projectId`; omit it to use the MCP session selection, changed by
+`fablecut_select_project`. Media URLs are project-qualified as
+`/projects/<id>/media/<file>`.
+
+Set **`FABLECUT_DATA_DIR`** to move `projects/` and `library/` outside the
+checkout. The plugin sets it so updates cannot touch timelines or footage.
+Existing v1 root-level `project.json`, `media/`, `exports/`, and `analysis/` are
+migrated once to `projects/default/`. **Don't assume a project file is beside
+`mcp-server.js`** — call `fablecut_status`, which reports the real workspace.
 
 ## Run
 
@@ -82,14 +99,14 @@ node server.js        # → http://localhost:7777
 ```
 
 Files: `index.html` + `style.css` + `app.js` (editor UI), `server.js` (API + hosting),
-`project.json` (the timeline — THE file to edit), `media/` (project footage),
-`library/` (default asset library, see below).
+`projects/<id>/project.json` (timeline), `projects/<id>/media/` (project footage),
+and `library/` (shared default asset library, see below).
 
 ## How Claude Code edits a video
 
 1. Ensure the server is running (background: `node server.js`, or `fablecut_status`).
-2. Put source files in `./media/` (copy them in, or the user imports via the UI).
-3. Read `project.json`, modify `media` / `clips`, **increment `revision`**, write it back.
+2. Select/create a project and put sources in its `media/` (or import via the UI).
+3. Read its `project.json`, modify `media` / `clips`, **increment `revision`**, write it back.
 4. The browser UI (if open) reloads instantly. The user previews/exports from the UI.
 
 Rules:
@@ -107,7 +124,7 @@ Rules:
 - Don't edit `project.json` while the UI may be mid-drag — the UI defers external
   reloads during gestures, then picks up the next change.
 
-## The asset library (`./library/`) — default media
+## The shared asset library (`./library/`) — default media
 
 Reusable assets, visible in the editor's left-panel tabs and never copied:
 
@@ -127,7 +144,7 @@ Reusable assets, visible in the editor's left-panel tabs and never copied:
 ## Authoring animated SVGs (the `svg` clip kind)
 
 You can create your own vector animations/overlays: write an `.svg` file into
-`library/svg/` (or `media/`), register it as media with `"kind": "svg"`, and
+`library/svg/` (or the project's `media/`), register it as media with `"kind": "svg"`, and
 place it on a video track. The compositor renders it frame-accurately, driven
 by the clip's local time (preview and export).
 
@@ -182,7 +199,7 @@ Examples in `library/svg/`: `sparkles.svg` (loop), `lower-third.svg`,
   // ^ optional — track ids (V4 V3 V2 V1 A1 A2 A3) omitted from preview/export when listed
   "media": [
     { "id": "m_abc", "name": "intro.mp4", "kind": "video",  // video|audio|image|svg
-      "src": "/media/intro.mp4",             // path under ./media or ./library
+      "src": "/projects/my-edit/media/intro.mp4", // project media, or /library/…
       "duration": 12.4, "width": 1920, "height": 1080,
       "folderId": null }                     // optional: id of a folders[] entry
   ],
@@ -368,11 +385,12 @@ and hand back an **edit blueprint** so the same idea can be rebuilt with
 different footage over the same music.
 
 **Run the analysis** (any of):
-- MCP: `fablecut_analyze_reference {path:"C:\\…\\ref.mp4"}` (absolute path or an
-  existing `/media/...` src; copies the file into `media/` if needed)
-- REST: `POST /api/analyze` body `{"src":"/media/ref.mp4", "threshold":0.3, "music":true}`
-  (GET `/api/analyze?src=/media/ref.mp4` returns the cached result)
-- CLI: `node analyze.js media/ref.mp4` (results also cached in `./analysis/<name>.json`)
+- MCP: `fablecut_analyze_reference {projectId:"my-edit",path:"C:\\…\\ref.mp4"}`
+  (absolute path or project media URL; copies into that project's `media/` if needed)
+- REST: `POST /api/analyze?project=my-edit` body
+  `{"src":"/projects/my-edit/media/ref.mp4", "threshold":0.3, "music":true}`
+  (`GET /api/analyze?project=my-edit&src=…` returns the cached result)
+- CLI: `node analyze.js <project-media-path>` (the standalone CLI writes beside its input)
 
 **The blueprint** (needs ffmpeg on PATH):
 ```jsonc
@@ -386,7 +404,7 @@ different footage over the same music.
   "bpm": 118,                          // detected tempo
   "energy": { "step": 0.5, "values": [12, 30, ...] },  // loudness curve 0–100
   "drop": 8.5,                         // biggest musical rise — the money moment
-  "music": { "name": "ref-music.m4a", "src": "/media/…", "mediaId": "m_x" }
+  "music": { "name": "ref-music.m4a", "src": "/projects/my-edit/media/…", "mediaId": "m_x" }
 }                                      // ^ extracted + registered by the MCP tool
 ```
 `threshold` tunes cut sensitivity (default adapts 0.30→0.20→0.12): lower it if
@@ -408,26 +426,32 @@ obvious cuts were missed, raise it if motion is being misread as cuts.
 
 ## REST API (alternative to file editing)
 
+Project-scoped routes below accept `?project=<id>` (default: `default`). This is
+per request, so different tabs and clients can safely work on different projects.
+
+- `GET /api/projects` — list project workspaces
+- `POST /api/projects` — create one; body `{name, id?}`
+
 - `GET  /api/project` — current project JSON
 - `PUT  /api/project` — replace project JSON (body = full document).
   **Conflict-safe**: if the body's `revision` ≤ the revision currently on disk,
   the server rejects with **409** and returns `{"error":"…","revision":<current>}`.
   Append `?force=1` to overwrite unconditionally. Writes are atomic (tmp file +
   rename), so a crashed write never corrupts the file.
-- `GET  /api/media`   — list files in ./media (name, src, size)
+- `GET  /api/media`   — list files in the selected project's media folder
 - `GET  /api/library?dir=sfx|elements|svg|fonts` — list library assets
-- `POST /api/upload?name=foo.mp4` — raw body saved into ./media, returns `{src}`.
+- `POST /api/upload?name=foo.mp4` — raw body saved into the project's media folder, returns `{src}`.
   MP4/MOV/M4V uploads are auto-remuxed with `+faststart` (needs ffmpeg on PATH).
-  Files copied straight into ./media by external tools skip this — remux big ones
+  Files copied straight into a project's `media/` by external tools skip this — remux big ones
   yourself (`ffmpeg -i in.mp4 -c copy -movflags +faststart out.mp4`) or playback stalls.
-- `POST /api/analyze` — body `{src:"/media/ref.mp4", threshold?, music?}`: analyze a
+- `POST /api/analyze` — body `{src:"/projects/<id>/media/ref.mp4", threshold?, music?}`: analyze a
   reference video into an edit blueprint (see "Remake a reference video"); extracts
-  its music into ./media. `GET /api/analyze?src=…` returns the cached blueprint.
-- `GET  /api/events`  — SSE, emits `change` when project.json, ./media or ./library changes
+  its music into that project's `media/`. `GET /api/analyze?src=…` returns the cached blueprint.
+- `GET  /api/events`  — project-scoped SSE; emits `change` for its project or shared library
 - Fast export (used by the UI; browser renders frames, ffmpeg encodes):
   `GET /api/export/ffmpeg` → `{available}` · `POST /api/export/begin` `{fps,name}` → `{id}`
   · `POST /api/export/frame?id=` (JPEG body, in order) · `POST /api/export/audio?id=` (WAV body)
-  · `POST /api/export/end?id=[&discard=1]` → `{src}` under `/exports/`
+  · `POST /api/export/end?id=[&discard=1]` → `{src}` under `/projects/<id>/exports/`
 
 ## Recipes
 
@@ -546,7 +570,7 @@ Realtime export, and `/api/export/begin` all use this value; pass the same
 Export is user-driven (Export button → dialog). Two engines: **Fast** (browser
 renders each frame with the normal compositor — including SVG frames, keys and
 AI masks — streams JPEG frames + an offline WAV mix to the server, ffmpeg
-encodes a CRF-18 faststart MP4 into `./exports/`) and **Realtime**
+encodes a CRF-18 faststart MP4 into the project's `exports/`) and **Realtime**
 (MediaRecorder fallback). Claude cannot trigger export headlessly — the
 compositor lives in the browser; ask the user to click Export, or render with
-ffmpeg directly from `media/` sources if a file is needed.
+ffmpeg directly from the project's `media/` sources if a file is needed.
