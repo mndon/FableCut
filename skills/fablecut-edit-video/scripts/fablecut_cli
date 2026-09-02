@@ -1,0 +1,484 @@
+#!/usr/bin/env python3
+"""通过 FableCut HTTP API 操作远程视频项目。"""
+
+from __future__ import annotations
+
+import argparse
+import copy
+import http.client
+import json
+import mimetypes
+import os
+import secrets
+import ssl
+import sys
+from pathlib import Path
+from typing import Any, Optional
+from urllib.parse import unquote, urlencode, urlsplit
+
+
+ENV_URL = "FABLECUT_URL"
+ENV_TOKEN = "FABLECUT_TOKEN"
+TIMEOUT_SECONDS = 120
+UPLOAD_CHUNK_SIZE = 1024 * 1024
+
+
+class CliError(Exception):
+    """可安全展示给调用方的错误。"""
+
+
+class HttpError(CliError):
+    def __init__(self, status: int, message: str):
+        super().__init__(message)
+        self.status = status
+
+
+def fail(message: str) -> None:
+    token = os.environ.get(ENV_TOKEN, "")
+    if token:
+        message = message.replace(token, "[已隐藏]")
+    print(f"错误：{message}", file=sys.stderr)
+
+
+class Client:
+    def __init__(self) -> None:
+        raw_url = os.environ.get(ENV_URL, "").strip()
+        self.token = os.environ.get(ENV_TOKEN, "").strip()
+        if not raw_url:
+            raise CliError(f"缺少环境变量 {ENV_URL}")
+        if not self.token:
+            raise CliError(f"缺少环境变量 {ENV_TOKEN}")
+
+        parsed = urlsplit(raw_url)
+        if parsed.scheme not in ("http", "https") or not parsed.hostname:
+            raise CliError(f"{ENV_URL} 必须是有效的 http 或 https URL")
+        if parsed.username or parsed.password or parsed.query or parsed.fragment:
+            raise CliError(f"{ENV_URL} 不得包含账号、查询参数或片段")
+        self.scheme = parsed.scheme
+        self.host = parsed.hostname
+        self.port = parsed.port
+        self.base_path = parsed.path.rstrip("/")
+
+    def _connection(self) -> http.client.HTTPConnection:
+        if self.scheme == "https":
+            return http.client.HTTPSConnection(
+                self.host,
+                self.port,
+                timeout=TIMEOUT_SECONDS,
+                context=ssl.create_default_context(),
+            )
+        return http.client.HTTPConnection(self.host, self.port, timeout=TIMEOUT_SECONDS)
+
+    def _target(self, api_path: str, query: Optional[dict[str, Any]]) -> str:
+        path = f"{self.base_path}/{api_path.lstrip('/')}"
+        encoded = urlencode({k: v for k, v in (query or {}).items() if v is not None})
+        return path + (f"?{encoded}" if encoded else "")
+
+    def request(
+        self,
+        method: str,
+        api_path: str,
+        *,
+        query: Optional[dict[str, Any]] = None,
+        payload: Optional[Any] = None,
+        upload: Optional[Path] = None,
+    ) -> Any:
+        if payload is not None and upload is not None:
+            raise CliError("请求不能同时包含 JSON 和文件")
+
+        target = self._target(api_path, query)
+        headers = {
+            "Accept": "application/json",
+            "Authorization": f"Bearer {self.token}",
+            "User-Agent": "fablecut-cli/1",
+        }
+        body = None
+        if payload is not None:
+            body = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+            headers["Content-Type"] = "application/json; charset=utf-8"
+            headers["Content-Length"] = str(len(body))
+        elif upload is not None:
+            headers["Content-Type"] = mimetypes.guess_type(upload.name)[0] or "application/octet-stream"
+            headers["Content-Length"] = str(upload.stat().st_size)
+
+        connection = self._connection()
+        try:
+            connection.putrequest(method, target)
+            for name, value in headers.items():
+                connection.putheader(name, value)
+            connection.endheaders()
+            if body is not None:
+                connection.send(body)
+            elif upload is not None:
+                with upload.open("rb") as source:
+                    while chunk := source.read(UPLOAD_CHUNK_SIZE):
+                        connection.send(chunk)
+
+            response = connection.getresponse()
+            raw = response.read()
+            text = raw.decode("utf-8", errors="replace").strip()
+            data: Any = None
+            if text:
+                try:
+                    data = json.loads(text)
+                except json.JSONDecodeError:
+                    data = text
+
+            if 300 <= response.status < 400:
+                raise HttpError(response.status, "服务返回重定向；为保护 Token，CLI 不会自动跟随")
+            if not 200 <= response.status < 300:
+                if isinstance(data, dict):
+                    detail = data.get("error") or data.get("message") or response.reason
+                else:
+                    detail = data or response.reason
+                raise HttpError(response.status, f"HTTP {response.status}：{detail}")
+            return data if data is not None else {}
+        except (OSError, http.client.HTTPException) as exc:
+            raise CliError(f"请求失败：{exc}") from exc
+        finally:
+            connection.close()
+
+
+def parse_json(value: str, label: str, expected: type) -> Any:
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError as exc:
+        raise CliError(f"{label} 不是有效 JSON：第 {exc.lineno} 行第 {exc.colno} 列") from exc
+    if not isinstance(parsed, expected):
+        expected_name = "数组" if expected is list else "对象"
+        raise CliError(f"{label} 必须是 JSON {expected_name}")
+    return parsed
+
+
+def require_project(project: Any) -> dict[str, Any]:
+    if not isinstance(project, dict):
+        raise CliError("服务返回的项目不是 JSON 对象")
+    if not isinstance(project.get("clips"), list) or not isinstance(project.get("media"), list):
+        raise CliError("项目必须包含 clips 和 media 数组")
+    return project
+
+
+def validate_document_for_set(project: dict[str, Any]) -> None:
+    media_ids = {item.get("id") for item in project["media"] if isinstance(item, dict)}
+    for clip in project["clips"]:
+        if not isinstance(clip, dict):
+            raise CliError("clips 中的每一项都必须是 JSON 对象")
+        if not clip.get("id") or not clip.get("track"):
+            raise CliError("每个 clip 都必须包含 id 和 track")
+        if not isinstance(clip.get("start"), (int, float)) or not isinstance(clip.get("duration"), (int, float)):
+            raise CliError(f"clip {clip.get('id')} 的 start 和 duration 必须是数值")
+        if clip.get("kind") not in ("text", "adjust") and clip.get("mediaId") not in media_ids:
+            raise CliError(f"clip {clip.get('id')} 引用了未知 mediaId：{clip.get('mediaId')}")
+
+
+def new_id(prefix: str) -> str:
+    return prefix + secrets.token_hex(4)
+
+
+def merge_into(target: dict[str, Any], changes: Any) -> None:
+    if changes is None:
+        return
+    if not isinstance(changes, dict):
+        raise CliError("set 必须是 JSON 对象")
+    for key, value in changes.items():
+        if value is None:
+            target.pop(key, None)
+        elif key == "props" and isinstance(target.get("props"), dict) and isinstance(value, dict):
+            for prop, prop_value in value.items():
+                if prop_value is None:
+                    target["props"].pop(prop, None)
+                else:
+                    target["props"][prop] = prop_value
+        else:
+            target[key] = value
+
+
+def apply_ops(project: dict[str, Any], ops: list[Any]) -> tuple[dict[str, Any], list[str]]:
+    if not ops:
+        raise CliError("--ops 必须是非空 JSON 数组")
+    result = copy.deepcopy(require_project(project))
+    notes: list[str] = []
+
+    for index, operation in enumerate(ops, start=1):
+        if not isinstance(operation, dict):
+            raise CliError(f"第 {index} 个 op 必须是 JSON 对象")
+        kind = operation.get("op")
+
+        if kind == "addClip":
+            clip = copy.deepcopy(operation.get("clip"))
+            if not isinstance(clip, dict) or not clip.get("track"):
+                raise CliError("addClip 需要 clip.track、clip.start 和 clip.duration")
+            if not isinstance(clip.get("start"), (int, float)) or not isinstance(clip.get("duration"), (int, float)):
+                raise CliError("addClip 需要数值型 clip.start 和 clip.duration")
+            clip["id"] = clip.get("id") or new_id("c_")
+            if any(item.get("id") == clip["id"] for item in result["clips"]):
+                raise CliError(f"addClip：clip id 重复：{clip['id']}")
+            if clip.get("kind") not in ("text", "adjust") and not any(
+                media.get("id") == clip.get("mediaId") for media in result["media"]
+            ):
+                raise CliError(f"addClip：未知 mediaId：{clip.get('mediaId')}")
+            result["clips"].append(clip)
+            notes.append("+" + clip["id"])
+
+        elif kind == "updateClip":
+            clip = next((item for item in result["clips"] if item.get("id") == operation.get("id")), None)
+            if clip is None:
+                raise CliError(f"updateClip：找不到 clip：{operation.get('id')}")
+            merge_into(clip, operation.get("set"))
+            notes.append("~" + str(operation.get("id")))
+
+        elif kind == "removeClip":
+            before = len(result["clips"])
+            result["clips"] = [item for item in result["clips"] if item.get("id") != operation.get("id")]
+            if len(result["clips"]) == before:
+                raise CliError(f"removeClip：找不到 clip：{operation.get('id')}")
+            notes.append("-" + str(operation.get("id")))
+
+        elif kind == "addMedia":
+            media = copy.deepcopy(operation.get("media"))
+            if not isinstance(media, dict) or not media.get("src") or not media.get("kind"):
+                raise CliError("addMedia 需要 media.src 和 media.kind")
+            media["id"] = media.get("id") or new_id("m_")
+            if any(item.get("id") == media["id"] for item in result["media"]):
+                raise CliError(f"addMedia：media id 重复：{media['id']}")
+            media["name"] = media.get("name") or Path(unquote(media["src"])).name
+            result["media"].append(media)
+            notes.append("+" + media["id"])
+
+        elif kind == "removeMedia":
+            used = next((clip for clip in result["clips"] if clip.get("mediaId") == operation.get("id")), None)
+            if used:
+                raise CliError(f"removeMedia：素材正被 clip {used.get('id')} 使用")
+            before = len(result["media"])
+            result["media"] = [item for item in result["media"] if item.get("id") != operation.get("id")]
+            if len(result["media"]) == before:
+                raise CliError(f"removeMedia：找不到 media：{operation.get('id')}")
+            notes.append("-" + str(operation.get("id")))
+
+        elif kind == "setProject":
+            changes = operation.get("set") or {}
+            if not isinstance(changes, dict):
+                raise CliError("setProject.set 必须是 JSON 对象")
+            allowed = {"name", "width", "height", "fps", "background", "markers", "disabledTracks"}
+            unknown = set(changes) - allowed
+            if unknown:
+                raise CliError(f"setProject：不可修改字段：{', '.join(sorted(unknown))}")
+            for key, value in changes.items():
+                if value is None:
+                    result.pop(key, None)
+                else:
+                    result[key] = value
+            notes.append("~project")
+
+        else:
+            raise CliError(
+                "未知 op；仅支持 addClip、updateClip、removeClip、addMedia、removeMedia、setProject"
+            )
+
+    result["revision"] = int(result.get("revision") or 0) + 1
+    return result, notes
+
+
+def get_project(client: Client, project_id: str) -> dict[str, Any]:
+    return require_project(client.request("GET", "/api/project", query={"project": project_id}))
+
+
+def put_project(client: Client, project_id: str, project: dict[str, Any], force: bool = False) -> Any:
+    query = {"project": project_id, "force": "1" if force else None}
+    return client.request("PUT", "/api/project", query=query, payload=project)
+
+
+def patch_project(client: Client, project_id: str, ops: list[Any]) -> tuple[dict[str, Any], list[str]]:
+    last_error: Optional[HttpError] = None
+    for _attempt in range(3):
+        project = get_project(client, project_id)
+        updated, notes = apply_ops(project, ops)
+        try:
+            put_project(client, project_id, updated)
+            return updated, notes
+        except HttpError as exc:
+            if exc.status != 409:
+                raise
+            last_error = exc
+    raise CliError(f"项目持续发生并发修改，三次重试后仍未保存：{last_error}")
+
+
+DEFAULT_PROPS = {
+    "x": 0, "y": 0, "scale": 1, "rotation": 0, "opacity": 1, "volume": 1, "speed": 1,
+    "blend": "normal", "fit": "contain", "cropL": 0, "cropR": 0, "cropT": 0, "cropB": 0,
+    "cornerRadius": 0, "flipH": False, "flipV": False, "filterPreset": "none",
+    "brightness": 100, "contrast": 100, "saturation": 100, "hue": 0, "temperature": 0,
+    "tint": 0, "blur": 0, "grayscale": 0, "sepia": 0, "invert": 0, "vignette": 0,
+    "shake": 0, "shakeSpeed": 8, "rgbSplit": 0, "grain": 0, "chromaKey": "",
+    "chromaTolerance": 26, "chromaSoftness": 12, "bgRemove": False,
+    "text": "Title", "fontSize": 72, "color": "#ffffff", "color2": "", "font": "Segoe UI",
+    "bold": True, "weight": 0, "italic": False, "uppercase": False, "align": "center",
+    "letterSpacing": 0, "lineHeight": 1.2, "textShadow": 12, "glow": 0, "glowColor": "",
+    "strokeWidth": 0, "strokeColor": "#000", "bgColor": "#000", "bgOpacity": 0,
+    "textAnim": "none", "wordRate": 0.15,
+}
+
+
+def number(value: Any) -> str:
+    if isinstance(value, float):
+        return f"{value:.3f}".rstrip("0").rstrip(".")
+    return str(value)
+
+
+def compact_project(project_id: str, project: dict[str, Any]) -> str:
+    clips = project["clips"]
+    duration = max((float(clip.get("start", 0)) + float(clip.get("duration", 0)) for clip in clips), default=0)
+    lines = [
+        f"项目 {project_id}｜{project.get('name', '')}｜{project.get('width')}x{project.get('height')}"
+        f" @{project.get('fps')}fps｜{number(duration)}s｜revision {project.get('revision', 0)}",
+        f"素材 {len(project['media'])}｜片段 {len(clips)}",
+    ]
+    for media in project["media"]:
+        suffix = f" {number(media['duration'])}s" if media.get("duration") is not None else ""
+        lines.append(f"M {media.get('id')} {media.get('kind')} {media.get('name', '')}{suffix}")
+    for clip in sorted(clips, key=lambda item: (str(item.get("track", "")), float(item.get("start", 0)))):
+        props = {
+            key: value for key, value in (clip.get("props") or {}).items()
+            if key not in DEFAULT_PROPS or DEFAULT_PROPS[key] != value
+        }
+        extras = []
+        if props:
+            extras.append("props=" + json.dumps(props, ensure_ascii=False, separators=(",", ":")))
+        if clip.get("keyframes"):
+            extras.append("keys=" + ",".join(sorted(clip["keyframes"])))
+        if clip.get("transitionIn"):
+            extras.append("inTransition=" + json.dumps(clip["transitionIn"], separators=(",", ":")))
+        if clip.get("transitionOut"):
+            extras.append("outTransition=" + json.dumps(clip["transitionOut"], separators=(",", ":")))
+        lines.append(
+            f"C {clip.get('id')} {clip.get('track')} {clip.get('kind')} "
+            f"start={number(clip.get('start', 0))} in={number(clip.get('in', 0))} "
+            f"duration={number(clip.get('duration', 0))} media={clip.get('mediaId')}"
+            + (" " + " ".join(extras) if extras else "")
+        )
+    return "\n".join(lines)
+
+
+KIND_BY_EXT = {
+    ".mp4": "video", ".webm": "video", ".mov": "video", ".mkv": "video", ".m4v": "video", ".avi": "video",
+    ".mp3": "audio", ".wav": "audio", ".ogg": "audio", ".m4a": "audio", ".aac": "audio", ".flac": "audio",
+    ".png": "image", ".jpg": "image", ".jpeg": "image", ".gif": "image", ".webp": "image", ".svg": "svg",
+}
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="fablecut_cli", description="通过远程 FableCut API 剪辑视频")
+    commands = parser.add_subparsers(dest="command", required=True)
+
+    create = commands.add_parser("create-project", help="创建项目")
+    create.add_argument("--name", required=True, help="项目名称")
+    create.add_argument("--id", help="稳定的项目 ID")
+
+    get = commands.add_parser("get-project", help="读取项目时间线")
+    get.add_argument("--project", required=True, help="项目 ID")
+    get.add_argument("--compact", action="store_true", help="输出紧凑摘要")
+
+    patch = commands.add_parser("patch-project", help="批量修改项目")
+    patch.add_argument("--project", required=True, help="项目 ID")
+    patch.add_argument("--ops", required=True, help="JSON 操作数组")
+
+    set_command = commands.add_parser("set-project", help="替换完整项目")
+    set_command.add_argument("--project", required=True, help="项目 ID")
+    set_command.add_argument("--document", required=True, help="完整项目 JSON 对象")
+    set_command.add_argument("--force", action="store_true", help="明确覆盖并发修改")
+
+    import_command = commands.add_parser("import-media", help="上传并注册素材")
+    import_command.add_argument("--project", required=True, help="项目 ID")
+    import_command.add_argument("--path", required=True, help="本地素材路径")
+    return parser
+
+
+def run(args: argparse.Namespace) -> None:
+    client = Client()
+
+    if args.command == "create-project":
+        payload = {"name": args.name}
+        if args.id:
+            payload["id"] = args.id
+        output = client.request("POST", "/api/projects", payload=payload)
+        print(json.dumps(output, ensure_ascii=False, indent=2))
+        return
+
+    if args.command == "get-project":
+        project = get_project(client, args.project)
+        if args.compact:
+            print(compact_project(args.project, project))
+        else:
+            print(json.dumps(project, ensure_ascii=False, indent=2))
+        return
+
+    if args.command == "patch-project":
+        ops = parse_json(args.ops, "--ops", list)
+        project, notes = patch_project(client, args.project, ops)
+        output = {
+            "ok": True,
+            "project": args.project,
+            "revision": project["revision"],
+            "clips": len(project["clips"]),
+            "media": len(project["media"]),
+            "changes": notes,
+        }
+        print(json.dumps(output, ensure_ascii=False, indent=2))
+        return
+
+    if args.command == "set-project":
+        project = require_project(parse_json(args.document, "--document", dict))
+        project = copy.deepcopy(project)
+        validate_document_for_set(project)
+        project["revision"] = int(project.get("revision") or 0) + 1
+        response = put_project(client, args.project, project, force=args.force)
+        output = {"ok": True, "project": args.project, "revision": project["revision"], "response": response}
+        print(json.dumps(output, ensure_ascii=False, indent=2))
+        return
+
+    if args.command == "import-media":
+        source = Path(args.path).expanduser().resolve()
+        if not source.is_file():
+            raise CliError(f"找不到素材文件：{source}")
+        kind = KIND_BY_EXT.get(source.suffix.lower())
+        if not kind:
+            raise CliError(f"不支持的素材扩展名：{source.suffix or '(无扩展名)'}")
+        uploaded = client.request(
+            "POST",
+            "/api/upload",
+            query={"project": args.project, "name": source.name},
+            upload=source,
+        )
+        if not isinstance(uploaded, dict) or not uploaded.get("src"):
+            raise CliError("上传响应缺少 src")
+        media = {
+            "id": new_id("m_"),
+            "name": Path(unquote(uploaded["src"])).name,
+            "kind": kind,
+            "src": uploaded["src"],
+        }
+        try:
+            project, _notes = patch_project(client, args.project, [{"op": "addMedia", "media": media}])
+        except CliError as exc:
+            raise CliError(f"文件已上传到 {uploaded['src']}，但素材注册失败：{exc}") from exc
+        output = {"ok": True, "project": args.project, "revision": project["revision"], "media": media}
+        print(json.dumps(output, ensure_ascii=False, indent=2))
+        return
+
+    raise CliError("未知命令")
+
+
+def main() -> int:
+    try:
+        run(build_parser().parse_args())
+        return 0
+    except (CliError, ValueError) as exc:
+        fail(str(exc))
+        return 1
+    except KeyboardInterrupt:
+        fail("操作已取消")
+        return 130
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

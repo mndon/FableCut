@@ -1,0 +1,4 @@
+interface:
+  display_name: "FableCut 视频剪辑"
+  short_description: "通过远程 FableCut 安全创建项目并完成视频剪辑"
+  default_prompt: "使用 $fablecut-edit-video 创建项目、导入素材并完成一版视频剪辑。"

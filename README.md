@@ -209,10 +209,24 @@ once to `projects/default/`.
 /plugin install fablecut@fablecut
 ```
 
-That registers the MCP server for you and adds two skills — `edit-video` and
-`remake-reel`. Your timeline and footage live in the plugin's own data
+That registers the MCP server for you and adds the local `edit-video` and
+`remake-reel` skills. Your timeline and footage live in the plugin's own data
 directory, so an update never touches them. Node 18+ and (optionally) ffmpeg
 still need to be on your machine.
+
+For an already-running remote deployment, install the standalone Chinese skill
+in `skills/fablecut-edit-video/` instead. It needs Python 3.9+ but no MCP setup:
+
+```bash
+export FABLECUT_URL="https://fablecut.example.com"
+export FABLECUT_TOKEN="<token>"
+python3 skills/fablecut-edit-video/scripts/fablecut_cli get-project \
+  --project my-edit --compact
+```
+
+The CLI provides `create-project`, `get-project`, `patch-project`,
+`set-project`, and `import-media`. It sends the token as a Bearer credential;
+the remote gateway is responsible for authentication.
 
 ## Driving it with an AI agent
 
