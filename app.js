@@ -5381,7 +5381,7 @@ async function prepareFrameAssets(t) {
     }
   }
 }
-async function fastExport() {
+async function fastExport(options = {}) {
   if (state.exporting) return;
   pause();
   state.exporting = true; state.rendering = true; renderCancelled = false;
@@ -5395,8 +5395,9 @@ async function fastExport() {
     els.exportTitle.textContent = "Mixing audio…";
     const wav = await renderAudioMix(dur);
     if (renderCancelled) throw new Error("cancelled");
+    const exportName = options.name || project.name.replace(/[^\w\- ]+/g, "") || "export";
     const begin = await fetch(projectApi("/api/export/begin"), {
-      method: "POST", body: JSON.stringify({ fps, name: project.name.replace(/[^\w\- ]+/g, "") || "export" }),
+      method: "POST", body: JSON.stringify({ fps, name: exportName, requestId: options.requestId }),
     }).then((r) => r.json());
     if (!begin.id) throw new Error(begin.error || "export begin failed");
     sessId = begin.id;
@@ -5413,6 +5414,7 @@ async function fastExport() {
       await prepareFrameAssets(t);       // exact SVG frames + AI masks
       drawFrame(t);
       const blob = await new Promise((res) => els.preview.toBlob(res, "image/jpeg", 0.95));
+      if (!blob || !blob.size) throw new Error("canvas returned an empty JPEG frame");
       const r = await fetch("/api/export/frame?id=" + sessId, { method: "POST", body: blob });
       if (!r.ok) throw new Error((await r.json()).error || "frame upload failed");
       const pct = ((f + 1) / frames) * 100;
@@ -5422,12 +5424,17 @@ async function fastExport() {
     els.exportTitle.textContent = "Encoding…";
     const end = await fetch("/api/export/end?id=" + sessId, { method: "POST" }).then((r) => r.json());
     if (!end.src) throw new Error(end.error || "encode failed");
-    const a = document.createElement("a");
-    a.href = end.src;
-    a.download = decodeURIComponent(end.src.split("/").pop());
-    a.click();
+    if (!options.requestId) {
+      const a = document.createElement("a");
+      a.href = end.src;
+      a.download = decodeURIComponent(end.src.split("/").pop());
+      a.click();
+    }
   } catch (e) {
     if (sessId) fetch("/api/export/end?id=" + sessId + "&discard=1", { method: "POST" }).catch(() => { });
+    if (options.requestId) fetch(projectApi("/api/export/report"), {
+      method: "POST", body: JSON.stringify({ requestId: options.requestId, error: String(e.message || e) }),
+    }).catch(() => { });
     if (String(e.message) !== "cancelled") alert("Export failed: " + e.message);
   } finally {
     state.exporting = false; state.rendering = false;
@@ -6063,5 +6070,13 @@ rebuildClips();
 renderBin();
 syncTrimIOButton();
 buildMeterDOM();
-connectServer().then(loadLibraryFonts);
+connectServer().then(async () => {
+  await loadLibraryFonts();
+  const params = new URLSearchParams(location.search);
+  const requestId = params.get("cliExport");
+  if (state.connected && /^[a-f0-9]{32}$/.test(requestId || "")) {
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    await fastExport({ requestId, name: params.get("cliExportName") || undefined });
+  }
+});
 requestAnimationFrame(loop);

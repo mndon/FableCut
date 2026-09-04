@@ -164,12 +164,21 @@ async function faststart(file) {
    The browser renders frames with its own compositor and streams them here as
    JPEGs; ffmpeg encodes them (plus an optional WAV mix) into a real MP4. */
 const exportSessions = new Map();
-function beginExport(fps, name, projectId) {
+const exportRequests = new Map();
+function setExportRequest(id, value) {
+  if (!id || !/^[a-f0-9]{32}$/.test(id)) return;
+  exportRequests.set(id, { ...value, updated: Date.now() });
+  if (exportRequests.size > 100) {
+    const oldest = [...exportRequests].sort((a, b) => a[1].updated - b[1].updated).slice(0, 20);
+    for (const [key] of oldest) exportRequests.delete(key);
+  }
+}
+function beginExport(fps, name, projectId, requestId) {
   const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fablecut-"));
   const videoPath = path.join(dir, "video.mp4");
   const proc = spawn("ffmpeg", [
-    "-y", "-f", "image2pipe", "-framerate", String(fps), "-i", "-",
+    "-y", "-f", "image2pipe", "-vcodec", "mjpeg", "-framerate", String(fps), "-i", "-",
     // The browser's JPEG frames are full-range BT.601 (JFIF). Convert them to
     // limited-range BT.709 and TAG the stream, otherwise x264 emits bt470bg/pc/
     // unknown and players do the wrong YUV->RGB conversion — the render comes
@@ -184,11 +193,12 @@ function beginExport(fps, name, projectId) {
   proc.stderr.on("data", (d) => { stderr = (stderr + d).slice(-2000); });
   proc.stdin.on("error", () => {}); // EPIPE if ffmpeg dies mid-stream; surfaced via exit code
   const sess = {
-    proc, dir, videoPath, name: safeName(name || "export"), projectId,
-    wav: null, err: () => stderr,
+    proc, dir, videoPath, name: safeName(name || "export"), projectId, requestId,
+    wav: null, frames: 0, frameBytes: 0, err: () => stderr,
     done: new Promise((res) => proc.on("close", res)),
   };
   exportSessions.set(id, sess);
+  setExportRequest(requestId, { state: "rendering", projectId });
   return id;
 }
 function cleanupExport(id) {
@@ -348,12 +358,32 @@ const server = http.createServer(async (req, res) => {
     sendJSON(res, 200, { available: HAS_FFMPEG });
     return;
   }
+  if (p === "/api/export/status" && req.method === "GET") {
+    try {
+      const pp = requestProject(url);
+      const status = exportRequests.get(url.searchParams.get("id"));
+      if (!status || status.projectId !== pp.id) { sendJSON(res, 404, { error: "no such export request" }); return; }
+      sendJSON(res, 200, status);
+    } catch (e) { sendJSON(res, 400, { error: String(e) }); }
+    return;
+  }
+  if (p === "/api/export/report" && req.method === "POST") {
+    try {
+      const pp = requestProject(url);
+      const opts = JSON.parse((await readBody(req)).toString("utf8") || "{}");
+      const existing = exportRequests.get(opts.requestId);
+      if (!existing || existing.state !== "error")
+        setExportRequest(opts.requestId, { state: "error", projectId: pp.id, error: String(opts.error || "browser export failed") });
+      sendJSON(res, 200, { ok: true });
+    } catch (e) { sendJSON(res, 400, { error: String(e) }); }
+    return;
+  }
   if (p === "/api/export/begin" && req.method === "POST") {
     if (!HAS_FFMPEG) { sendJSON(res, 400, { error: "ffmpeg not found on PATH" }); return; }
     try {
       const pp = requestProject(url);
       const opts = JSON.parse((await readBody(req)).toString("utf8") || "{}");
-      sendJSON(res, 200, { id: beginExport(opts.fps || 30, opts.name, pp.id) });
+      sendJSON(res, 200, { id: beginExport(opts.fps || 30, opts.name, pp.id, opts.requestId) });
     } catch (e) { sendJSON(res, 500, { error: String(e) }); }
     return;
   }
@@ -362,9 +392,12 @@ const server = http.createServer(async (req, res) => {
     if (!sess) { sendJSON(res, 404, { error: "no such export session" }); return; }
     try {
       const body = await readBody(req);
+      if (body.length < 4 || body[0] !== 0xff || body[1] !== 0xd8)
+        throw new Error("export frame is not a valid JPEG");
       if (sess.proc.exitCode !== null) throw new Error("ffmpeg exited: " + sess.err());
       if (!sess.proc.stdin.write(body))
         await new Promise((r) => sess.proc.stdin.once("drain", r));
+      sess.frames++; sess.frameBytes += body.length;
       sendJSON(res, 200, { ok: true });
     } catch (e) { sendJSON(res, 500, { error: String(e) }); }
     return;
@@ -385,6 +418,7 @@ const server = http.createServer(async (req, res) => {
     if (!sess) { sendJSON(res, 404, { error: "no such export session" }); return; }
     try {
       if (url.searchParams.get("discard")) { cleanupExport(id); sendJSON(res, 200, { ok: true }); return; }
+      if (!sess.frames) throw new Error("export received no video frames");
       sess.proc.stdin.end();
       const code = await sess.done;
       if (code !== 0) throw new Error("ffmpeg encode failed: " + sess.err());
@@ -402,8 +436,15 @@ const server = http.createServer(async (req, res) => {
         await run("ffmpeg", ["-y", "-i", sess.videoPath, "-c", "copy",
           ...TAGS, "-movflags", "+faststart", out]);
       cleanupExport(id);
+      setExportRequest(sess.requestId, { state: "complete", projectId: pp.id,
+        src: "/projects/" + encodeURIComponent(pp.id) + "/exports/" + encodeURIComponent(path.basename(out)) });
       sendJSON(res, 200, { ok: true, src: "/projects/" + encodeURIComponent(pp.id) + "/exports/" + encodeURIComponent(path.basename(out)) });
-    } catch (e) { cleanupExport(id); sendJSON(res, 500, { error: String(e) }); }
+    } catch (e) {
+      const detail = `${String(e)} (frames=${sess.frames}, bytes=${sess.frameBytes})`;
+      setExportRequest(sess.requestId, { state: "error", projectId: sess.projectId,
+        error: detail });
+      cleanupExport(id); sendJSON(res, 500, { error: detail });
+    }
     return;
   }
 

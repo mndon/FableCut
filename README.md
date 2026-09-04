@@ -37,7 +37,8 @@ Projects are isolated workspaces: each gets its own `project.json`, media,
 analysis cache, and exports. Use the top-bar picker, or open different
 `/?project=<id>` URLs in separate tabs, to edit several projects at once.
 
-Zero npm dependencies. One `node server.js`. That's it.
+Zero npm runtime dependencies. Run `node server.js`, or install the standalone
+CLI globally and run `fablecut-cli server start`.
 
 ![FableCut editor](docs/screenshot.png)
 
@@ -214,19 +215,39 @@ That registers the MCP server for you and adds the local `edit-video` and
 directory, so an update never touches them. Node 18+ and (optionally) ffmpeg
 still need to be on your machine.
 
-For an already-running remote deployment, install the standalone Chinese skill
-in `skills/fablecut-edit-video/` instead. It needs Python 3.9+ but no MCP setup:
+### Or install the command-line interface
+
+The standalone npm package starts the complete editor/API server, exposes the
+agent editing commands, and can drive the browser compositor headlessly to
+produce a final MP4:
+
+```bash
+npm install -g fablecut-cli
+fablecut-cli server start
+fablecut-cli get-project --project default --compact
+fablecut-cli export --project default --output ./final.mp4
+```
+
+The package has no npm runtime dependencies. Headless export needs ffmpeg on
+the server and Chrome/Chromium on the CLI machine. Use `--browser <path>` or
+`CHROME_PATH` if the browser is not discovered automatically. The CLI server
+stores projects and shared library data under `~/.fablecut` by default and
+serves the editor from its own bundled runtime, so it does not depend on a
+FableCut source checkout. Override storage with `--data-dir` or
+`FABLECUT_DATA_DIR`.
+
+For an already-running remote deployment, set its URL and optional Bearer
+credential before using the same commands:
 
 ```bash
 export FABLECUT_URL="https://fablecut.example.com"
 export FABLECUT_TOKEN="<token>"
-python3 skills/fablecut-edit-video/scripts/fablecut_cli get-project \
-  --project my-edit --compact
+fablecut-cli get-project --project my-edit --compact
 ```
 
-The CLI provides `create-project`, `get-project`, `patch-project`,
-`set-project`, and `import-media`. It sends the token as a Bearer credential;
-the remote gateway is responsible for authentication.
+The CLI provides `list-projects`, `create-project`, `get-project`,
+`patch-project`, `set-project`, `import-media`, and `export`. The remote gateway
+is responsible for validating the optional Bearer credential.
 
 ## Driving it with an AI agent
 
@@ -331,6 +352,7 @@ style.css        dark editor theme
 mcp-server.js    stdio MCP server exposing the editor to AI agents
 analyze.js       reference-video analyzer: shots, beats/BPM, energy, drop,
                  music extraction (module + CLI)
+cli/             publishable fablecut-cli npm package
 CLAUDE.md        the agent manual (schema + recipes) — also served by fablecut_docs
 projects/        independent project workspaces (gitignored)
   <id>/project.json  timeline

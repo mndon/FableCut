@@ -5,14 +5,28 @@ description: 使用 FableCut 进行视频剪辑，FableCut将所有剪辑操作�
 
 # 使用 FableCut 剪辑视频
 
-使用本 skill 自带的 `scripts/fablecut_cli` 进行剪辑操作。
+使用全局安装的 `fablecut-cli` 进行剪辑和导出操作。本 skill 不内置 CLI。
+
+## 初始化 CLI
+
+每次执行本 skill 时，先检查 CLI；仅在命令不存在时通过 npm 全局安装：
+
+```bash
+if ! command -v fablecut-cli >/dev/null 2>&1; then
+  npm install -g fablecut-cli
+fi
+```
+
+若 `npm` 不存在或安装失败，立即停止并向用户报告原始错误。安装成功后，后续步骤
+统一直接调用 `fablecut-cli`，不要调用 skill 目录中的脚本或自行实现替代客户端。
 
 ## 执行约束
 
-- 仅运行 `scripts/fablecut_cli`，把它视为不可检查的黑盒工具。
-- 不要读取、搜索、复制、解释或修改 `scripts/fablecut_cli` 的实现。
-- CLI 返回非零退出码或错误时，立即停止并向用户报告原始错误。不要调试或修复 CLI，不要改用 MCP、直接 HTTP 请求或其他方式绕过失败。
-- 确认环境变量 `FABLECUT_URL` 和 `FABLECUT_TOKEN` 已设置，但不要打印 Token。
+- 仅运行 `fablecut-cli`，把它视为不可检查的黑盒工具。
+- 不要读取、搜索、复制、解释或修改 CLI 的实现。
+- CLI 或自动安装命令返回非零退出码时，立即停止并向用户报告原始错误。不要调试或修复 CLI，不要改用 MCP、直接 HTTP 请求或其他方式绕过失败。
+- 确认环境变量 `FABLECUT_URL` 已设置；远端服务需要鉴权时也确认
+  `FABLECUT_TOKEN` 已设置，但不要打印 Token。本地默认服务可省略两者。
 - 需要 schema、属性、时间语义或剪辑配方时，只读取 [剪辑参考](references/editing-guide.md) 中与当前任务相关的章节。
 
 ## CLI 命令
@@ -20,7 +34,7 @@ description: 使用 FableCut 进行视频剪辑，FableCut将所有剪辑操作�
 统一调用方式：
 
 ```bash
-python3 <skill目录>/scripts/fablecut_cli <命令> <参数>
+fablecut-cli <命令> <参数>
 ```
 
 - `create-project`：创建项目。
@@ -41,6 +55,13 @@ python3 <skill目录>/scripts/fablecut_cli <命令> <参数>
   - `--project <ID>`：必填，目标项目 ID。
   - `--path <绝对路径>`：必填，本地视频、音频、图片或 SVG 文件。
   - 返回可供片段引用的 `media` 对象。
+- `export`：用无头 Chrome/Chromium 调用与预览相同的浏览器合成器，导出最终 MP4。
+  - `--project <ID>`：必填，目标项目 ID。
+  - `--output <路径>`：可选，本地输出文件；默认使用项目名。
+  - `--name <名称>`：可选，服务端导出名称。
+  - `--force`：可选，覆盖已存在的本地输出文件。
+  - `--browser <路径>`：可选，指定 Chrome/Chromium。
+  - `--timeout <秒>`：可选，默认 3600 秒。
 - `--help`：查看命令或子命令帮助。
 
 `patch-project` 支持以下操作：
@@ -62,8 +83,8 @@ python3 <skill目录>/scripts/fablecut_cli <命令> <参数>
 - 用户要求新建项目或没有可用项目时，运行 `create-project`，记录返回的项目 ID。不要猜测已有项目 ID。
 
 ```bash
-python3 <skill目录>/scripts/fablecut_cli create-project --name "产品短片" --id product-reel
-python3 <skill目录>/scripts/fablecut_cli get-project --project product-reel --compact
+fablecut-cli create-project --name "产品短片" --id product-reel
+fablecut-cli get-project --project product-reel --compact
 ```
 
 ### 2. 导入素材并完成剪辑
@@ -71,13 +92,13 @@ python3 <skill目录>/scripts/fablecut_cli get-project --project product-reel --
 先读取紧凑时间线，确认素材、片段 ID、轨道和时长。逐个运行 `import-media` 导入本地素材，记录返回的 `media.id`。
 
 ```bash
-python3 <skill目录>/scripts/fablecut_cli import-media --project product-reel --path /absolute/path/intro.mp4
+fablecut-cli import-media --project product-reel --path /absolute/path/intro.mp4
 ```
 
 根据任务读取必要的剪辑参考，规划轨道、入点、时长、效果和音频。优先用一次 `patch-project` 提交相关修改，避免中间态：
 
 ```bash
-python3 <skill目录>/scripts/fablecut_cli patch-project --project product-reel --ops '[
+fablecut-cli patch-project --project product-reel --ops '[
   {"op":"addClip","clip":{"kind":"video","mediaId":"m_demo","track":"V1","start":0,"in":0,"duration":5,"props":{"fit":"cover"}}},
   {"op":"addClip","clip":{"kind":"text","mediaId":null,"track":"V2","start":0.4,"in":0,"duration":2.5,"props":{"text":"现在开始","font":"Anton","fontSize":96,"textAnim":"word-pop"}}}
 ]'
@@ -87,7 +108,11 @@ python3 <skill目录>/scripts/fablecut_cli patch-project --project product-reel 
 
 ### 3. 验证并交付
 
-再次运行 `get-project --compact`，核对总时长、轨道、素材引用、片段边界、关键帧和转场。让用户在 `$FABLECUT_URL/?project=<项目ID>` 中预览，并在浏览器中执行导出。
+再次运行 `get-project --compact`，核对总时长、轨道、素材引用、片段边界、关键帧和转场。让用户在 `$FABLECUT_URL/?project=<项目ID>` 中预览；需要交付最终文件时运行：
+
+```bash
+fablecut-cli export --project product-reel --output ./product-reel.mp4
+```
 
 ## 剪辑原则
 
@@ -96,4 +121,5 @@ python3 <skill目录>/scripts/fablecut_cli patch-project --project product-reel 
 - 相关修改合并到一次 patch，避免多次往返和中间态。
 - 字幕与标题按用途选择字体，不要整条片重复同一种展示字体。
 - 交付前检查画幅、FPS、响度、字幕安全区、空隙和片尾音频淡出。
-- 导出依赖浏览器合成器，CLI 不触发导出。
+- 最终导出需要服务端 PATH 中有 ffmpeg，并在 CLI 机器上安装 Chrome/Chromium；
+  CLI 会无头驱动浏览器合成器，不要另写 ffmpeg 时间线替代它。

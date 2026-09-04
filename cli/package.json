@@ -1,0 +1,30 @@
+{
+  "name": "fablecut-cli",
+  "version": "1.7.0",
+  "description": "Command-line server, editing client, and headless exporter for FableCut",
+  "license": "MIT",
+  "type": "commonjs",
+  "bin": {
+    "fablecut-cli": "bin/fablecut-cli.js"
+  },
+  "files": [
+    "bin/",
+    "lib/",
+    "scripts/",
+    "runtime/",
+    "README.md"
+  ],
+  "scripts": {
+    "sync-runtime": "node scripts/pack-runtime.js",
+    "prepare": "node scripts/pack-runtime.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "fablecut",
+    "video-editor",
+    "cli",
+    "headless-export"
+  ]
+}
