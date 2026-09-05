@@ -8,7 +8,8 @@ const path = require("path");
 const { spawn, spawnSync } = require("child_process");
 const { pipeline } = require("stream/promises");
 const { URL } = require("url");
-const DEFAULT_DATA_DIR = path.join(os.homedir(), ".fablecut");
+const DEFAULT_DATA_DIR = path.join(os.homedir(), ".tik-editvideo-cli");
+const LEGACY_DATA_DIR = path.join(os.homedir(), ".fablecut");
 
 class CliError extends Error {
   constructor(message, exitCode = 1) { super(message); this.exitCode = exitCode; }
@@ -59,6 +60,19 @@ function runtimeDir() {
   const packaged = path.resolve(__dirname, "../runtime");
   if (fs.existsSync(path.join(packaged, "server.js"))) return packaged;
   throw new CliError("FableCut runtime is missing; run 'npm run sync-runtime' in the CLI source directory or reinstall tik-editvideo-cli");
+}
+
+function defaultDataDir() {
+  if (!fs.existsSync(DEFAULT_DATA_DIR) && fs.existsSync(LEGACY_DATA_DIR)) {
+    try { fs.renameSync(LEGACY_DATA_DIR, DEFAULT_DATA_DIR); }
+    catch (error) {
+      throw new CliError(
+        `Could not migrate ${LEGACY_DATA_DIR} to ${DEFAULT_DATA_DIR}: ${error.message}. ` +
+        "Fix the directory ownership or start with --data-dir <dir>"
+      );
+    }
+  }
+  return DEFAULT_DATA_DIR;
 }
 
 class Client {
@@ -366,7 +380,7 @@ Usage:
 Environment:
   FABLECUT_URL       Server URL (default http://127.0.0.1:7777)
   FABLECUT_TOKEN     Optional Bearer token for hosted servers
-  FABLECUT_DATA_DIR  Project/library storage (default ~/.fablecut)
+  FABLECUT_DATA_DIR  Project/library storage (default ~/.tik-editvideo-cli)
   CHROME_PATH        Chrome/Chromium executable used by 'export'`);
 }
 
@@ -379,7 +393,7 @@ async function main(argv = process.argv.slice(2)) {
     if (options.host) process.env.HOST = String(options.host);
     if (options.port) process.env.PORT = String(options.port);
     if (options["data-dir"]) process.env.FABLECUT_DATA_DIR = path.resolve(String(options["data-dir"]));
-    else if (!process.env.FABLECUT_DATA_DIR) process.env.FABLECUT_DATA_DIR = DEFAULT_DATA_DIR;
+    else if (!process.env.FABLECUT_DATA_DIR) process.env.FABLECUT_DATA_DIR = defaultDataDir();
     require(path.join(runtimeDir(), "server.js"));
     return;
   }

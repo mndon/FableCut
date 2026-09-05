@@ -19,18 +19,21 @@ tik-editvideo-cli export --project default --output ./final.mp4
 ```
 
 `tik-editvideo-cli server start` 默认将项目、素材、分析结果、导出文件和共享素材库保存到
-`~/.fablecut/`：
+`~/.tik-editvideo-cli/`：
 
 ```text
-~/.fablecut/projects/<id>/project.json
-~/.fablecut/projects/<id>/media/
-~/.fablecut/projects/<id>/exports/
-~/.fablecut/projects/<id>/analysis/
-~/.fablecut/library/
+~/.tik-editvideo-cli/projects/<id>/project.json
+~/.tik-editvideo-cli/projects/<id>/media/
+~/.tik-editvideo-cli/projects/<id>/exports/
+~/.tik-editvideo-cli/projects/<id>/analysis/
+~/.tik-editvideo-cli/library/
 ```
 
 可通过 `--data-dir <目录>` 或 `FABLECUT_DATA_DIR` 修改数据位置。CLI 包含自己的
 Web 编辑器运行时，启动后不依赖 FableCut 源码仓库。
+
+从旧版本首次升级启动时，如果 `~/.tik-editvideo-cli` 尚不存在但 `~/.fablecut`
+存在，CLI 会将旧目录一次性重命名到新位置。若两个目录都已存在，则不会自动覆盖或合并。
 
 运行 `tik-editvideo-cli --help` 查看全部命令和参数。
 
@@ -65,7 +68,7 @@ tik-editvideo-cli list-projects
 ```
 
 启动服务后，日志中的 `app files` 应指向 `cli/runtime`，`projects` 和 `library`
-应指向 `~/.fablecut`，而不是源码仓库根目录。
+应指向 `~/.tik-editvideo-cli`，而不是源码仓库根目录。
 
 模拟正式发布包：
 

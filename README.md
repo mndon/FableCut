@@ -231,10 +231,12 @@ tik-editvideo-cli export --project default --output ./final.mp4
 The package has no npm runtime dependencies. Headless export needs ffmpeg on
 the server and Chrome/Chromium on the CLI machine. Use `--browser <path>` or
 `CHROME_PATH` if the browser is not discovered automatically. The CLI server
-stores projects and shared library data under `~/.fablecut` by default and
+stores projects and shared library data under `~/.tik-editvideo-cli` by default and
 serves the editor from its own bundled runtime, so it does not depend on a
 FableCut source checkout. Override storage with `--data-dir` or
-`FABLECUT_DATA_DIR`.
+`FABLECUT_DATA_DIR`. On first start after upgrading, an existing `~/.fablecut`
+is renamed to the new default if `~/.tik-editvideo-cli` does not yet exist;
+neither directory is overwritten or merged.
 
 For an already-running remote deployment, set its URL and optional Bearer
 credential before using the same commands:

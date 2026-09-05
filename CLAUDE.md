@@ -111,9 +111,10 @@ provides `list-projects`, `create-project`, `get-project`, `patch-project`,
 `set-project`, and `import-media`; use `tik-editvideo-cli --help` for arguments.
 It defaults to `http://127.0.0.1:7777`, or uses `FABLECUT_URL` and the optional
 `FABLECUT_TOKEN` Bearer credential for a hosted service. The CLI server stores
-data under `~/.fablecut` by default (override with `--data-dir` or
+data under `~/.tik-editvideo-cli` by default (override with `--data-dir` or
 `FABLECUT_DATA_DIR`) and serves its bundled runtime without reading files from
-the source checkout.
+the source checkout. On first start after upgrading, an existing `~/.fablecut`
+is renamed to the new default when `~/.tik-editvideo-cli` does not yet exist.
 
 Files: `index.html` + `style.css` + `app.js` (editor UI), `server.js` (API + hosting),
 `projects/<id>/project.json` (timeline), `projects/<id>/media/` (project footage),
