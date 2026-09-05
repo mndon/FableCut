@@ -58,7 +58,7 @@ function parseJSON(value, label, kind) {
 function runtimeDir() {
   const packaged = path.resolve(__dirname, "../runtime");
   if (fs.existsSync(path.join(packaged, "server.js"))) return packaged;
-  throw new CliError("FableCut runtime is missing; run 'npm run sync-runtime' in the CLI source directory or reinstall fablecut-cli");
+  throw new CliError("FableCut runtime is missing; run 'npm run sync-runtime' in the CLI source directory or reinstall tik-editvideo-cli");
 }
 
 class Client {
@@ -83,7 +83,7 @@ class Client {
     if (json !== undefined && file) throw new CliError("A request cannot contain both JSON and a file");
     const url = this.target(apiPath, query);
     const transport = url.protocol === "https:" ? https : http;
-    const headers = { Accept: response === "json" ? "application/json" : "*/*", "User-Agent": "fablecut-cli/1" };
+    const headers = { Accept: response === "json" ? "application/json" : "*/*", "User-Agent": "tik-editvideo-cli/1" };
     if (this.token) headers.Authorization = "Bearer " + this.token;
     let body = null;
     if (json !== undefined) {
@@ -118,7 +118,7 @@ class Client {
       req.on("error", (error) => {
         if (error instanceof CliError) { reject(error); return; }
         const hint = url.hostname === "127.0.0.1" || url.hostname === "localhost"
-          ? " Is the server running? Start it with: fablecut-cli server start"
+          ? " Is the server running? Start it with: tik-editvideo-cli server start"
           : "";
         reject(new CliError(`Request to ${url.origin} failed: ${networkErrorMessage(error)}.${hint}`));
       });
@@ -320,7 +320,7 @@ async function exportProject(client, options) {
   const browserPath = findBrowser(options.browser === true ? undefined : options.browser);
   const requestId = require("crypto").randomBytes(16).toString("hex");
   const proxy = await createAuthProxy(client);
-  const profile = fs.mkdtempSync(path.join(os.tmpdir(), "fablecut-cli-chrome-"));
+  const profile = fs.mkdtempSync(path.join(os.tmpdir(), "tik-editvideo-cli-chrome-"));
   const url = new URL(`http://127.0.0.1:${proxy.port}/`);
   url.searchParams.set("project", projectId);
   url.searchParams.set("cliExport", requestId);
@@ -350,17 +350,17 @@ async function exportProject(client, options) {
 }
 
 function printHelp() {
-  console.log(`fablecut-cli - FableCut server, editing, and export CLI
+  console.log(`tik-editvideo-cli - FableCut server, editing, and export CLI
 
 Usage:
-  fablecut-cli server start [--host 127.0.0.1] [--port 7777] [--data-dir <dir>]
-  fablecut-cli list-projects
-  fablecut-cli create-project --name <name> [--id <id>]
-  fablecut-cli get-project --project <id> [--compact]
-  fablecut-cli patch-project --project <id> --ops '<JSON array>'
-  fablecut-cli set-project --project <id> --document '<JSON object>' [--force]
-  fablecut-cli import-media --project <id> --path <file>
-  fablecut-cli export --project <id> [--name <name>] [--output <mp4>] [--force]
+  tik-editvideo-cli server start [--host 127.0.0.1] [--port 7777] [--data-dir <dir>]
+  tik-editvideo-cli list-projects
+  tik-editvideo-cli create-project --name <name> [--id <id>]
+  tik-editvideo-cli get-project --project <id> [--compact]
+  tik-editvideo-cli patch-project --project <id> --ops '<JSON array>'
+  tik-editvideo-cli set-project --project <id> --document '<JSON object>' [--force]
+  tik-editvideo-cli import-media --project <id> --path <file>
+  tik-editvideo-cli export --project <id> [--name <name>] [--output <mp4>] [--force]
                      [--browser <path>] [--timeout <seconds>]
 
 Environment:
@@ -375,7 +375,7 @@ async function main(argv = process.argv.slice(2)) {
   const command = positionals[0];
   if (!command || command === "help" || options.help) { printHelp(); return; }
   if (command === "server") {
-    if (positionals[1] !== "start") throw new CliError("Use: fablecut-cli server start");
+    if (positionals[1] !== "start") throw new CliError("Use: tik-editvideo-cli server start");
     if (options.host) process.env.HOST = String(options.host);
     if (options.port) process.env.PORT = String(options.port);
     if (options["data-dir"]) process.env.FABLECUT_DATA_DIR = path.resolve(String(options["data-dir"]));
@@ -415,7 +415,7 @@ async function main(argv = process.argv.slice(2)) {
     catch (error) { throw new CliError(`File uploaded to ${uploaded.src}, but registration failed: ${error.message}`); }
     console.log(JSON.stringify({ ok:true, project:id, revision:result.project.revision, media }, null, 2));
   } else if (command === "export") await exportProject(client, options);
-  else throw new CliError("Unknown command: " + command + " (run fablecut-cli --help)");
+  else throw new CliError("Unknown command: " + command + " (run tik-editvideo-cli --help)");
 }
 
 module.exports = { main, applyOps, compactProject, Client };

@@ -1,28 +1,28 @@
 ---
-name: fablecut-edit-video
+name: tik-edit-video
 description: 使用 FableCut 进行视频剪辑，FableCut将所有剪辑操作维护在一份.json文件中，当剪辑操作完成可预览剪辑效果，也可以可渲染导出最终视频。本skill在用户需要视频剪辑时使用。
 ---
 
 # 使用 FableCut 剪辑视频
 
-使用全局安装的 `fablecut-cli` 进行剪辑和导出操作。本 skill 不内置 CLI。
+使用全局安装的 `tik-editvideo-cli` 进行剪辑和导出操作。本 skill 不内置 CLI。
 
 ## 初始化 CLI
 
 每次执行本 skill 时，先检查 CLI；仅在命令不存在时通过 npm 全局安装：
 
 ```bash
-if ! command -v fablecut-cli >/dev/null 2>&1; then
-  npm install -g fablecut-cli
+if ! command -v tik-editvideo-cli >/dev/null 2>&1; then
+  npm install -g tik-editvideo-cli
 fi
 ```
 
 若 `npm` 不存在或安装失败，立即停止并向用户报告原始错误。安装成功后，后续步骤
-统一直接调用 `fablecut-cli`，不要调用 skill 目录中的脚本或自行实现替代客户端。
+统一直接调用 `tik-editvideo-cli`，不要调用 skill 目录中的脚本或自行实现替代客户端。
 
 ## 执行约束
 
-- 仅运行 `fablecut-cli`，把它视为不可检查的黑盒工具。
+- 仅运行 `tik-editvideo-cli`，把它视为不可检查的黑盒工具。
 - 不要读取、搜索、复制、解释或修改 CLI 的实现。
 - CLI 或自动安装命令返回非零退出码时，立即停止并向用户报告原始错误。不要调试或修复 CLI，不要改用 MCP、直接 HTTP 请求或其他方式绕过失败。
 - 确认环境变量 `FABLECUT_URL` 已设置；远端服务需要鉴权时也确认
@@ -34,7 +34,7 @@ fi
 统一调用方式：
 
 ```bash
-fablecut-cli <命令> <参数>
+tik-editvideo-cli <命令> <参数>
 ```
 
 - `create-project`：创建项目。
@@ -83,8 +83,8 @@ fablecut-cli <命令> <参数>
 - 用户要求新建项目或没有可用项目时，运行 `create-project`，记录返回的项目 ID。不要猜测已有项目 ID。
 
 ```bash
-fablecut-cli create-project --name "产品短片" --id product-reel
-fablecut-cli get-project --project product-reel --compact
+tik-editvideo-cli create-project --name "产品短片" --id product-reel
+tik-editvideo-cli get-project --project product-reel --compact
 ```
 
 ### 2. 导入素材并完成剪辑
@@ -92,13 +92,13 @@ fablecut-cli get-project --project product-reel --compact
 先读取紧凑时间线，确认素材、片段 ID、轨道和时长。逐个运行 `import-media` 导入本地素材，记录返回的 `media.id`。
 
 ```bash
-fablecut-cli import-media --project product-reel --path /absolute/path/intro.mp4
+tik-editvideo-cli import-media --project product-reel --path /absolute/path/intro.mp4
 ```
 
 根据任务读取必要的剪辑参考，规划轨道、入点、时长、效果和音频。优先用一次 `patch-project` 提交相关修改，避免中间态：
 
 ```bash
-fablecut-cli patch-project --project product-reel --ops '[
+tik-editvideo-cli patch-project --project product-reel --ops '[
   {"op":"addClip","clip":{"kind":"video","mediaId":"m_demo","track":"V1","start":0,"in":0,"duration":5,"props":{"fit":"cover"}}},
   {"op":"addClip","clip":{"kind":"text","mediaId":null,"track":"V2","start":0.4,"in":0,"duration":2.5,"props":{"text":"现在开始","font":"Anton","fontSize":96,"textAnim":"word-pop"}}}
 ]'
@@ -111,7 +111,7 @@ fablecut-cli patch-project --project product-reel --ops '[
 再次运行 `get-project --compact`，核对总时长、轨道、素材引用、片段边界、关键帧和转场。让用户在 `$FABLECUT_URL/?project=<项目ID>` 中预览；需要交付最终文件时运行：
 
 ```bash
-fablecut-cli export --project product-reel --output ./product-reel.mp4
+tik-editvideo-cli export --project product-reel --output ./product-reel.mp4
 ```
 
 ## 剪辑原则

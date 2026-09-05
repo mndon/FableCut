@@ -1,4 +1,4 @@
-# fablecut-cli
+# tik-editvideo-cli
 
 FableCut 的零 npm 运行时依赖命令行工具，支持启动完整编辑器服务、操作项目以及
 通过无头浏览器导出最终视频。
@@ -12,13 +12,13 @@ FableCut 的零 npm 运行时依赖命令行工具，支持启动完整编辑器
 ## 安装与使用
 
 ```bash
-npm install -g fablecut-cli
-fablecut-cli server start
-fablecut-cli get-project --project default --compact
-fablecut-cli export --project default --output ./final.mp4
+npm install -g tik-editvideo-cli
+tik-editvideo-cli server start
+tik-editvideo-cli get-project --project default --compact
+tik-editvideo-cli export --project default --output ./final.mp4
 ```
 
-`fablecut-cli server start` 默认将项目、素材、分析结果、导出文件和共享素材库保存到
+`tik-editvideo-cli server start` 默认将项目、素材、分析结果、导出文件和共享素材库保存到
 `~/.fablecut/`：
 
 ```text
@@ -32,7 +32,7 @@ fablecut-cli export --project default --output ./final.mp4
 可通过 `--data-dir <目录>` 或 `FABLECUT_DATA_DIR` 修改数据位置。CLI 包含自己的
 Web 编辑器运行时，启动后不依赖 FableCut 源码仓库。
 
-运行 `fablecut-cli --help` 查看全部命令和参数。
+运行 `tik-editvideo-cli --help` 查看全部命令和参数。
 
 ## 开发阶段验证
 
@@ -58,10 +58,10 @@ npm run sync-runtime
 常用验证命令：
 
 ```bash
-command -v fablecut-cli
-fablecut-cli --help
-fablecut-cli server start
-fablecut-cli list-projects
+command -v tik-editvideo-cli
+tik-editvideo-cli --help
+tik-editvideo-cli server start
+tik-editvideo-cli list-projects
 ```
 
 启动服务后，日志中的 `app files` 应指向 `cli/runtime`，`projects` 和 `library`
@@ -72,11 +72,11 @@ fablecut-cli list-projects
 ```bash
 cd /path/to/FableCut/cli
 npm pack
-npm install -g ./fablecut-cli-1.7.0.tgz
+npm install -g ./tik-editvideo-cli-1.7.0.tgz
 ```
 
 取消开发链接：
 
 ```bash
-npm unlink -g fablecut-cli
+npm unlink -g tik-editvideo-cli
 ```

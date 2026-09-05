@@ -1,11 +1,11 @@
 {
-  "name": "fablecut-cli",
+  "name": "tik-editvideo-cli",
   "version": "1.7.0",
   "description": "Command-line server, editing client, and headless exporter for FableCut",
   "license": "MIT",
   "type": "commonjs",
   "bin": {
-    "fablecut-cli": "bin/fablecut-cli.js"
+    "tik-editvideo-cli": "bin/tik-editvideo-cli.js"
   },
   "files": [
     "bin/",
@@ -22,7 +22,7 @@
     "node": ">=18"
   },
   "keywords": [
-    "fablecut",
+    "tik",
     "video-editor",
     "cli",
     "headless-export"

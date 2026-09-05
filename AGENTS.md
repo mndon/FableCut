@@ -19,3 +19,5 @@ node /absolute/path/to/FableCut/mcp-server.js
 ```
 
 Use the existing `CLAUDE.md` recipes and tool descriptions rather than inventing a second protocol or schema.
+
+# 使用中文

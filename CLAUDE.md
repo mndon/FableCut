@@ -101,14 +101,14 @@ node server.js        # → http://localhost:7777
 Or install the standalone CLI (Node 18+, no npm runtime dependencies):
 
 ```bash
-npm install -g fablecut-cli
-fablecut-cli server start
+npm install -g tik-editvideo-cli
+tik-editvideo-cli server start
 ```
 
-`fablecut-cli server start` exposes the same editor and complete HTTP API as
+`tik-editvideo-cli server start` exposes the same editor and complete HTTP API as
 `node server.js`. It accepts `--host`, `--port`, and `--data-dir`. The CLI also
 provides `list-projects`, `create-project`, `get-project`, `patch-project`,
-`set-project`, and `import-media`; use `fablecut-cli --help` for arguments.
+`set-project`, and `import-media`; use `tik-editvideo-cli --help` for arguments.
 It defaults to `http://127.0.0.1:7777`, or uses `FABLECUT_URL` and the optional
 `FABLECUT_TOKEN` Bearer credential for a hosted service. The CLI server stores
 data under `~/.fablecut` by default (override with `--data-dir` or
@@ -587,7 +587,7 @@ Realtime export, and `/api/export/begin` all use this value; pass the same
 ## Export
 
 Export can be started in the UI (Export button → dialog) or headlessly with
-`fablecut-cli export --project <id> --output <file.mp4>`. Two engines: **Fast** (browser
+`tik-editvideo-cli export --project <id> --output <file.mp4>`. Two engines: **Fast** (browser
 renders each frame with the normal compositor — including SVG frames, keys and
 AI masks — streams JPEG frames + an offline WAV mix to the server, ffmpeg
 encodes a CRF-18 faststart MP4 into the project's `exports/`) and **Realtime**

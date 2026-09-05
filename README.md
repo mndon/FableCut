@@ -38,7 +38,7 @@ analysis cache, and exports. Use the top-bar picker, or open different
 `/?project=<id>` URLs in separate tabs, to edit several projects at once.
 
 Zero npm runtime dependencies. Run `node server.js`, or install the standalone
-CLI globally and run `fablecut-cli server start`.
+CLI globally and run `tik-editvideo-cli server start`.
 
 ![FableCut editor](docs/screenshot.png)
 
@@ -222,10 +222,10 @@ agent editing commands, and can drive the browser compositor headlessly to
 produce a final MP4:
 
 ```bash
-npm install -g fablecut-cli
-fablecut-cli server start
-fablecut-cli get-project --project default --compact
-fablecut-cli export --project default --output ./final.mp4
+npm install -g tik-editvideo-cli
+tik-editvideo-cli server start
+tik-editvideo-cli get-project --project default --compact
+tik-editvideo-cli export --project default --output ./final.mp4
 ```
 
 The package has no npm runtime dependencies. Headless export needs ffmpeg on
@@ -242,7 +242,7 @@ credential before using the same commands:
 ```bash
 export FABLECUT_URL="https://fablecut.example.com"
 export FABLECUT_TOKEN="<token>"
-fablecut-cli get-project --project my-edit --compact
+tik-editvideo-cli get-project --project my-edit --compact
 ```
 
 The CLI provides `list-projects`, `create-project`, `get-project`,
@@ -352,7 +352,7 @@ style.css        dark editor theme
 mcp-server.js    stdio MCP server exposing the editor to AI agents
 analyze.js       reference-video analyzer: shots, beats/BPM, energy, drop,
                  music extraction (module + CLI)
-cli/             publishable fablecut-cli npm package
+cli/             publishable tik-editvideo-cli npm package
 CLAUDE.md        the agent manual (schema + recipes) — also served by fablecut_docs
 projects/        independent project workspaces (gitignored)
   <id>/project.json  timeline
