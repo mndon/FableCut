@@ -646,6 +646,14 @@ function applyProject(data) {
   state.disabledTracks = new Set(disabledTracks);
   for (const c of project.clips) {
     c.props = { ...DEFAULT_PROPS, ...(c.props || {}) };
+    // External editors may omit the display-only clip name. Keep those valid
+    // timelines editable and derive the same label the UI uses for new clips.
+    if (typeof c.name !== "string") {
+      const mediaName = getMedia(c.mediaId)?.name;
+      c.name = mediaName ? mediaName.replace(/\.[^.]+$/, "")
+        : c.kind === "text" ? "Text"
+          : c.kind === "adjust" ? "Adjustment" : "Clip";
+    }
     if (c.keyframes) for (const arr of Object.values(c.keyframes))
       if (Array.isArray(arr)) arr.sort((a, b) => a.t - b.t);
     if (c.kind === "text") ensureFont(c.props.font);
@@ -2978,7 +2986,7 @@ function renderInspector(lite) {
   let html = (state.selIds.size > 1
     ? `<div class="insp-multi">${state.selIds.size} clips selected — drag moves them together, Del deletes all. Fields below edit the primary (white-outlined) clip.</div>`
     : "") + `<div class="insp-section"><h3>Clip — ${c.kind}</h3>
-    ${row("Name", `<input type="text" data-k="name" value="${c.name.replace(/"/g, "&quot;")}">`)}
+    ${row("Name", `<input type="text" data-k="name" value="${escapeHtml(c.name)}">`)}
     ${c.mediaId ? row("Source", `<button type="button" class="btn tiny style-picker-btn" data-media-open title="Replace this clip's media — keeps position, trim, keyframes and effects">${escapeHtml((getMedia(c.mediaId) || {}).name || "Missing media")} ▾</button>`) : ""}
     ${row("Start (s)", `<input type="number" data-k="start" step="0.01" value="${c.start.toFixed(2)}">`)}
     ${row("Length (s)", `<input type="number" data-k="duration" step="0.01" value="${c.duration.toFixed(2)}">`)}
