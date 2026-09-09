@@ -1,0 +1,4 @@
+interface:
+  display_name: "tik视频切片生成"
+  short_description: "复用提客语音转写与FableCut剪辑，生成服装直播语义精剪短片"
+  default_prompt: "使用 $tik-video-semantic-slicer 将这段服装直播按语义精剪，生成可预览和导出的短片。"

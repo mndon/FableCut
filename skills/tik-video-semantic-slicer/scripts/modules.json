@@ -1,0 +1,7 @@
+{
+  "modules": [
+    { "key": "hook",  "title": "钩子", "min": 2, "max": 5 },
+    { "key": "value", "title": "价值", "min": 0, "max": null },
+    { "key": "close", "title": "收束", "min": 2, "max": 3 }
+  ]
+}
