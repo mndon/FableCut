@@ -1,11 +1,11 @@
 ---
 name: tik-edit-video
-description: 使用 FableCut 进行视频剪辑，FableCut将所有剪辑操作维护在一份.json文件中，当剪辑操作完成可预览剪辑效果，也可以可渲染导出最终视频。本skill在用户需要视频剪辑时使用。
+description: 使用 tik-editvideo-cli 剪辑视频，支持素材导入、时间线编辑、预览和导出。适用于创建或修改视频剪辑项目。
 ---
 
-# 使用 FableCut 剪辑视频
+# 使用 tik-editvideo-cli 剪辑视频
 
-使用全局安装的 `tik-editvideo-cli` 进行剪辑和导出操作。本 skill 不内置 CLI。
+使用全局安装的 `tik-editvideo-cli` 进行剪辑和导出操作；本 skill 不内置 CLI。
 
 ## 初始化 CLI
 
@@ -17,16 +17,13 @@ if ! command -v tik-editvideo-cli >/dev/null 2>&1; then
 fi
 ```
 
-若 `npm` 不存在或安装失败，立即停止并向用户报告原始错误。安装成功后，后续步骤
-统一直接调用 `tik-editvideo-cli`，不要调用 skill 目录中的脚本或自行实现替代客户端。
+若 `npm` 不存在，停止并报告；命令执行失败按下述约束处理。
 
 ## 执行约束
 
-- 仅运行 `tik-editvideo-cli`，把它视为不可检查的黑盒工具。
-- 不要读取、搜索、复制、解释或修改 CLI 的实现。
+- 剪辑和导出仅通过 `tik-editvideo-cli` 执行，不检查或修改其实现。
 - CLI 或自动安装命令返回非零退出码时，立即停止并向用户报告原始错误。不要调试或修复 CLI，不要改用 MCP、直接 HTTP 请求或其他方式绕过失败。
-- 确认环境变量 `FABLECUT_URL` 已设置；远端服务需要鉴权时也确认
-  `FABLECUT_TOKEN` 已设置，但不要打印 Token。本地默认服务可省略两者。
+- 连接远端服务时，按 `tik-editvideo-cli --help` 配置服务地址和鉴权，不打印凭据。本地默认地址为 `http://127.0.0.1:7777`。
 - 需要 schema、属性、时间语义或剪辑配方时，只读取 [剪辑参考](references/editing-guide.md) 中与当前任务相关的章节。
 
 ## CLI 命令
@@ -111,7 +108,7 @@ tik-editvideo-cli patch-project --project product-reel --ops '[
 
 ### 3. 验证并交付
 
-再次运行 `get-project --compact`，核对总时长、轨道、素材引用、片段边界、关键帧和转场。让用户在 `$FABLECUT_URL/?project=<项目ID>` 中预览；需要交付最终文件时运行：
+再次运行 `get-project --compact`，核对总时长、轨道、素材引用和片段边界；关键帧和转场需读取完整项目核对。提供实际服务地址加 `/?project=<项目ID>` 的预览链接；需要交付最终文件时运行：
 
 ```bash
 tik-editvideo-cli export --project product-reel --output ./product-reel.mp4

@@ -1,4 +1,4 @@
-# FableCut 剪辑参考
+# tik-editvideo-cli 剪辑参考
 
 ## 目录
 
