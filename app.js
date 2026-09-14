@@ -3525,6 +3525,9 @@ function hookAudio(c, el) {
     }
     runtime.clipGain.set(c.id, g);
     routeClipGain(c);
+    // Prewarming before AudioContext creation silences the element itself.
+    // Once connected, the zeroed gain owns muting; restore the source level.
+    el.volume = 1;
   } catch {}
 }
 /** Reconnect a clip's gain to the correct track bus (or master for video tracks). */
