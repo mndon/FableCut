@@ -5302,21 +5302,48 @@ function startChosenExport() {
 
 /* ── Fast export ── */
 let renderCancelled = false;
+async function prepareVideoFrame(c, el, mt) {
+  const failure = (reason) => new Error(
+    `Video "${getMedia(c.mediaId)?.name || c.mediaId}" (clip ${c.id}, source ${mt.toFixed(4)}s): ${reason}` +
+    ` (readyState=${el?.readyState}, size=${el?.videoWidth}x${el?.videoHeight}, currentTime=${el?.currentTime})`);
+  if (!el) throw failure("missing media");
+  if (!el.paused) el.pause();
+  const waitFor = (ready, timeout, phase, start = () => {}) => new Promise((resolve, reject) => {
+    const events = ["loadedmetadata", "loadeddata", "canplay", "seeked", "error"];
+    const finish = (error) => {
+      clearTimeout(timer);
+      for (const event of events) el.removeEventListener(event, check);
+      error ? reject(error) : resolve();
+    };
+    const check = () => {
+      if (el.error) return finish(failure(`decode failed: ${el.error.message || "media error " + el.error.code}`));
+      if (el.readyState >= 1 && (!el.videoWidth || !el.videoHeight))
+        return finish(failure("no decodable video track; use a supported codec or transcode the source to H.264"));
+      if (ready()) finish();
+    };
+    const timer = setTimeout(() => finish(failure(`${phase} timed out after ${timeout / 1000}s`)), timeout);
+    for (const event of events) el.addEventListener(event, check);
+    try { start(); check(); } catch (error) { finish(failure(error.message)); }
+  });
+  await waitFor(() => el.readyState >= 1, 15000, "metadata load");
+  await waitFor(() => !el.seeking && el.readyState >= 2 && Math.abs(el.currentTime - mt) < 1e-4,
+    10000, "frame seek", () => {
+      if (Math.abs(el.currentTime - mt) >= 1e-4) el.currentTime = mt;
+    });
+}
 function seekVideosTo(t) {
   const waits = [];
   for (const c of project.clips) {
     if (c.kind !== "video") continue;
     if (!isTrackEnabled(c.track)) continue;
-    const el = getClipEl(c); if (!el) continue;
-    if (!activeAt(c, t)) { if (!el.paused) el.pause(); continue; }
+    if (!activeAt(c, t)) {
+      const el = runtime.clipEls.get(c.id);
+      if (el && !el.paused) el.pause();
+      continue;
+    }
+    const el = getClipEl(c);
     const mt = mediaTimeAt(c, t);
-    if (Math.abs(el.currentTime - mt) < 1e-4 && el.readyState >= 2) continue;
-    waits.push(new Promise((res) => {
-      const done = () => { clearTimeout(tm); el.removeEventListener("seeked", done); res(); };
-      const tm = setTimeout(done, 1500);
-      el.addEventListener("seeked", done);
-      try { el.currentTime = mt; } catch { done(); }
-    }));
+    waits.push(prepareVideoFrame(c, el, mt));
   }
   return Promise.all(waits);
 }
@@ -5439,11 +5466,11 @@ async function fastExport(options = {}) {
       a.click();
     }
   } catch (e) {
-    if (sessId) fetch("/api/export/end?id=" + sessId + "&discard=1", { method: "POST" }).catch(() => { });
-    if (options.requestId) fetch(projectApi("/api/export/report"), {
+    if (sessId) await fetch("/api/export/end?id=" + sessId + "&discard=1", { method: "POST" }).catch(() => { });
+    if (options.requestId) await fetch(projectApi("/api/export/report"), {
       method: "POST", body: JSON.stringify({ requestId: options.requestId, error: String(e.message || e) }),
     }).catch(() => { });
-    if (String(e.message) !== "cancelled") alert("Export failed: " + e.message);
+    if (!options.requestId && String(e.message) !== "cancelled") alert("Export failed: " + e.message);
   } finally {
     state.exporting = false; state.rendering = false;
     els.exportOverlay.classList.add("hidden");

@@ -339,7 +339,11 @@ async function exportProject(client, options) {
   url.searchParams.set("project", projectId);
   url.searchParams.set("cliExport", requestId);
   url.searchParams.set("cliExportName", name);
-  const chrome = spawn(browserPath, ["--headless=new", "--disable-gpu", "--no-first-run", "--no-default-browser-check", "--autoplay-policy=no-user-gesture-required", "--disable-background-timer-throttling", "--disable-renderer-backgrounding", "--user-data-dir=" + profile, "--window-size=1440,1000", url.href], { stdio: ["ignore", "ignore", "pipe"] });
+  // HEVC playback in Chrome requires hardware decoding. Do not disable the GPU.
+  const chrome = spawn(browserPath, ["--headless=new", "--no-first-run", "--no-default-browser-check", "--autoplay-policy=no-user-gesture-required", "--disable-background-timer-throttling", "--disable-renderer-backgrounding", "--user-data-dir=" + profile, "--window-size=1440,1000", url.href], { stdio: ["ignore", "ignore", "pipe"] });
+  let launchError;
+  chrome.on("error", (error) => { launchError = error; });
+  const closed = new Promise((resolve) => chrome.once("close", resolve));
   let stderr = "";
   chrome.stderr.on("data", (chunk) => { stderr = (stderr + chunk).slice(-4000); });
   const deadline = Date.now() + timeoutSeconds * 1000;
@@ -348,10 +352,11 @@ async function exportProject(client, options) {
     while (Date.now() < deadline) {
       await delay(500);
       try { status = await client.request("GET", "/api/export/status", { query: { project: projectId, id: requestId } }); }
-      catch (error) { if (error.status !== 404) throw error; continue; }
-      if (status.state === "complete") break;
-      if (status.state === "error") throw new CliError("Export failed: " + status.error);
-      if (chrome.exitCode !== null) throw new CliError(`Chrome exited before export completed${stderr ? ": " + stderr.trim().slice(-800) : ""}`);
+      catch (error) { if (error.status !== 404) throw error; }
+      if (status?.state === "complete") break;
+      if (status?.state === "error") throw new CliError("Export failed: " + status.error);
+      if (launchError) throw new CliError("Chrome failed to start: " + launchError.message);
+      if (chrome.exitCode !== null || chrome.signalCode !== null) throw new CliError(`Chrome exited before export completed${stderr ? ": " + stderr.trim().slice(-800) : ""}`);
     }
     if (!status || status.state !== "complete") throw new CliError(`Export timed out after ${timeoutSeconds} seconds`);
     await download(client, status.src, output, !!options.force);
@@ -359,6 +364,8 @@ async function exportProject(client, options) {
   } finally {
     if (chrome.exitCode === null) chrome.kill();
     proxy.close();
+    const killTimer = setTimeout(() => chrome.kill("SIGKILL"), 3000);
+    try { await closed; } finally { clearTimeout(killTimer); }
     fs.rmSync(profile, { recursive: true, force: true });
   }
 }
