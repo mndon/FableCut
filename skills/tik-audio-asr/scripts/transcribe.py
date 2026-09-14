@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import argparse
 import hashlib
 import http.client
 import json
@@ -300,7 +301,21 @@ def validate_rich_result(value: Any) -> dict[str, Any]:
     return value
 
 
-def transcribe(audio_path: str) -> dict[str, Any]:
+def validate_json_url(value: Any) -> str:
+    try:
+        parsed = urlsplit(value) if isinstance(value, str) else None
+        if (not parsed or parsed.scheme not in {"http", "https"} or not parsed.hostname
+                or parsed.username or parsed.password or any(c.isspace() for c in value)):
+            raise ValueError("invalid URL")
+        parsed.port
+    except ValueError as exc:
+        raise ToolError("INVALID_RESPONSE", "服务端未返回有效的 json_url") from exc
+    return value
+
+
+def transcribe(audio_path: str, return_mode: int = 0) -> dict[str, Any]:
+    if type(return_mode) is not int or return_mode not in (0, 1):
+        raise ToolError("ARGUMENT_INVALID", "return_mode 必须为 0 或 1")
     metadata = read_metadata(audio_path)
     client = TikAiClient(load_config())
     task = client.api_request("/api/v2/toolExtract", "POST", {
@@ -313,7 +328,7 @@ def transcribe(audio_path: str) -> dict[str, Any]:
             "desktop_file_name": metadata.path.name,
         },
         "without_merge_word": True,
-        "return_mode": 1 if os.environ.get("TIK_AUDIO_ASR_RETURN_MODE", "0").strip() == "1" else 0,
+        "return_mode": return_mode,
     })
     task_id = task.get("Id", task.get("id")) if isinstance(task, dict) else None
     if isinstance(task_id, bool) or not isinstance(task_id, int) or task_id <= 0:
@@ -342,6 +357,8 @@ def transcribe(audio_path: str) -> dict[str, Any]:
         detail = client.api_request(f"/api/v2/toolExtract/{task_id}", "GET")
         status = detail.get("parse_status") if isinstance(detail, dict) else None
         if status == 3:
+            if return_mode == 1:
+                return {"json_url": validate_json_url(detail.get("json_url"))}
             rich_result = validate_rich_result(detail.get("rich_result"))
             channels = sorted({sentence["channel_id"] for sentence in rich_result["sentences"]})
             return {"rich_result": rich_result, "speaker_mapping": {str(channel): f"说话人{index}" for index, channel in enumerate(channels, 1)}}
@@ -354,11 +371,15 @@ def transcribe(audio_path: str) -> dict[str, Any]:
 
 
 def main(argv: list[str]) -> int:
-    if len(argv) != 2 or argv[0] != "transcribe":
-        print("Usage: python3 scripts/transcribe.py transcribe <absolute-audio-path>", file=sys.stderr)
-        return 2
+    parser = argparse.ArgumentParser(description=__doc__)
+    sub = parser.add_subparsers(dest="command", required=True)
+    command = sub.add_parser("transcribe")
+    command.add_argument("audio_path", help="Absolute audio path")
+    command.add_argument("--return-mode", type=int, choices=(0, 1), default=0,
+                         help="0: inline JSON (default); 1: JSON URL")
+    args = parser.parse_args(argv)
     try:
-        print(json.dumps(transcribe(argv[1]), ensure_ascii=False, separators=(",", ":")))
+        print(json.dumps(transcribe(args.audio_path, args.return_mode), ensure_ascii=False, separators=(",", ":")))
         return 0
     except KeyboardInterrupt:
         print(json.dumps({"error": {"code": "CANCELLED", "message": "已取消音频转写"}}, ensure_ascii=False), file=sys.stderr)

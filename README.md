@@ -251,6 +251,20 @@ The CLI provides `list-projects`, `create-project`, `get-project`,
 `patch-project`, `set-project`, `import-media`, and `export`. The remote gateway
 is responsible for validating the optional Bearer credential.
 
+Attach an existing speech transcript when importing footage:
+
+```bash
+tik-editvideo-cli import-media --project my-edit --path /absolute/path/intro.mp4 --asr-url "https://example.com/intro-asr.json"
+```
+
+The optional `media.asrUrl` field is preserved in `project.json`, including browser
+saves and CLI project round trips. Another device can download that URL to reuse
+the complete original-source ASR JSON (`rich_result` and `speaker_mapping`, with
+timestamps in milliseconds). `addMedia` also accepts `asrUrl`; compact CLI output
+shows `asr=yes`, while full project output includes the URL. Existing projects
+remain compatible. The CLI does not download transcripts; URL availability and
+expiry depend on the ASR service.
+
 ## Driving it with an AI agent
 
 Everything an agent needs is in **[CLAUDE.md](CLAUDE.md)** — the complete

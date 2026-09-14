@@ -54,6 +54,7 @@ tik-editvideo-cli <命令> <参数>
 - `import-media`：上传本地素材并注册到项目。
   - `--project <ID>`：必填，目标项目 ID。
   - `--path <绝对路径>`：必填，本地视频、音频、图片或 SVG 文件。
+  - `--asr-url <URL>`：可选，原始素材完整 ASR JSON 的 HTTP(S) 地址，保存为 `media.asrUrl`，随工程交付供其他设备复用。
   - 返回可供片段引用的 `media` 对象。
 - `export`：用无头 Chrome/Chromium 调用与预览相同的浏览器合成器，导出最终 MP4。
   - `--project <ID>`：必填，目标项目 ID。
@@ -69,7 +70,7 @@ tik-editvideo-cli <命令> <参数>
 - `addClip`：添加片段；可省略 `clip.id`。
 - `updateClip`：用 `id` 定位并通过 `set` 更新；`props` 按键合并。
 - `removeClip`：用 `id` 删除片段。
-- `addMedia`：注册已有远程素材；本地文件优先使用 `import-media`。
+- `addMedia`：注册已有远程素材，可在 `media.asrUrl` 附带 ASR 结果地址；本地文件优先使用 `import-media`。
 - `removeMedia`：删除未被片段引用的素材记录。
 - `setProject`：修改 `name`、`width`、`height`、`fps`、`background`、`markers`、`disabledTracks`。
 
@@ -91,8 +92,10 @@ tik-editvideo-cli get-project --project product-reel --compact
 
 先读取紧凑时间线，确认素材、片段 ID、轨道和时长。逐个运行 `import-media` 导入本地素材，记录返回的 `media.id`。
 
+已有 ASR URL 时随导入传入 `--asr-url`。需要转写内容时，先读取完整工程中的对应 `media.asrUrl` 并下载复用；紧凑摘要的 `asr=yes` 仅提示结果存在。链接内容包含 `rich_result` 和 `speaker_mapping`，时间戳基于原始素材、单位毫秒。下载失败时报告，不自动重复转写。
+
 ```bash
-tik-editvideo-cli import-media --project product-reel --path /absolute/path/intro.mp4
+tik-editvideo-cli import-media --project product-reel --path /absolute/path/intro.mp4 --asr-url "https://example.com/intro-asr.json"
 ```
 
 根据任务读取必要的剪辑参考，规划轨道、入点、时长、效果和音频。优先用一次 `patch-project` 提交相关修改，避免中间态：

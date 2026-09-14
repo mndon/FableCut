@@ -710,8 +710,8 @@ function projectJSON() {
     name, width, height, fps, background, revision,
     folders: (folders || []).map(({ id, name, parentId, open }) =>
       ({ id, name, parentId: parentId || null, open: open !== false })),
-    media: media.filter((m) => !m.transient).map(({ id, name, kind, src, duration, width, height, folderId }) =>
-      ({ id, name, kind, src, duration, width, height, folderId: folderId || null })),
+    media: media.filter((m) => !m.transient).map(({ id, name, kind, src, duration, width, height, folderId, asrUrl }) =>
+      ({ id, name, kind, src, duration, width, height, folderId: folderId || null, ...(asrUrl === undefined ? {} : { asrUrl }) })),
     clips: clips.map(({ id, mediaId, kind, track, start, in: inn, duration, name, props, keyframes, transitionIn, transitionOut, linkedId, linkGroup }) => {
       const out = { id, mediaId, kind, track, start, in: inn, duration, name, props, keyframes, transitionIn, transitionOut };
       if (linkGroup) out.linkGroup = linkGroup;

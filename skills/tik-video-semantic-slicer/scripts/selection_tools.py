@@ -52,6 +52,8 @@ def bind_media(sources, source_id, imported):
         raise ValueError("Need known source_id and successful import-media JSON")
     if source.get("media_id") not in (None, media["id"]):
         raise ValueError("Source already bound to another media ID; reconcile explicitly")
+    if "asr_url" in source and source["asr_url"] != media.get("asrUrl"):
+        raise ValueError("Imported media ASR URL differs from source.asr_url")
     source["media_id"] = media["id"]
     return sources
 

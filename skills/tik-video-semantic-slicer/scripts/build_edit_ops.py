@@ -56,6 +56,8 @@ def check_project_mapping(project, mapping):
         if clip["kind"] == "video":
             if media[clip["mediaId"]]["src"] != entry["source_src"]:
                 raise ValueError(f"Imported source changed: {clip['mediaId']}")
+            if "asr_url" in entry and media[clip["mediaId"]].get("asrUrl") != entry["asr_url"]:
+                raise ValueError(f"Imported ASR URL changed: {clip['mediaId']}")
             duration = number(media[clip["mediaId"]].get("duration", entry["source_duration"]), "media.duration")
             if clip["in"] + clip["duration"] * clip["props"]["speed"] > duration + EPS:
                 raise ValueError(f"Source boundary exceeded: {clip['id']}")
@@ -102,6 +104,8 @@ def build(sentences, selection, config, sources, project, project_id, previous=N
         media = media_map[source["media_id"]]
         if media["kind"] != "video":
             raise ValueError("Imported source must be video media")
+        if "asr_url" in source and source["asr_url"] != media.get("asrUrl"):
+            raise ValueError(f"Project ASR URL differs from source: {source['id']}")
         # The CLI may register only id/kind/src; use measured local metadata, never guessed duration.
         measured = media.get("duration")
         if measured is None:
@@ -121,6 +125,7 @@ def build(sentences, selection, config, sources, project, project_id, previous=N
                 clip["transitionIn"] = {"type": kind, "duration": overlap}
             entries.append({"index": sentence["index"], "part": part, "source_id": source["id"],
                             "source_duration": source_end, "source_src": media["src"],
+                            **({"asr_url": media["asrUrl"]} if "asrUrl" in media else {}),
                             "text": text, "clip": clip})
             cursor += duration
     for i, entry in enumerate(entries):

@@ -109,6 +109,9 @@ tik-editvideo-cli server start
 `node server.js`. It accepts `--host`, `--port`, and `--data-dir`. The CLI also
 provides `list-projects`, `create-project`, `get-project`, `patch-project`,
 `set-project`, and `import-media`; use `tik-editvideo-cli --help` for arguments.
+`import-media --asr-url <http(s)-url>` optionally attaches an existing ASR JSON
+result as `media.asrUrl`; `addMedia` accepts the same optional field. Compact
+CLI summaries mark these media with `asr=yes`; read the full project for URLs.
 It defaults to `http://127.0.0.1:7777`, or uses `FABLECUT_URL` and the optional
 `FABLECUT_TOKEN` Bearer credential for a hosted service. The CLI server stores
 data under `~/.tik-editvideo-cli` by default (override with `--data-dir` or
@@ -218,6 +221,7 @@ Examples in `library/svg/`: `sparkles.svg` (loop), `lower-third.svg`,
   "media": [
     { "id": "m_abc", "name": "intro.mp4", "kind": "video",  // video|audio|image|svg
       "src": "/projects/my-edit/media/intro.mp4", // project media, or /library/…
+      "asrUrl": "https://example.com/intro-asr.json", // optional: original-source ASR JSON
       "duration": 12.4, "width": 1920, "height": 1080,
       "folderId": null }                     // optional: id of a folders[] entry
   ],
@@ -247,6 +251,13 @@ Examples in `library/svg/`: `sparkles.svg` (loop), `lower-third.svg`,
   ]
 }
 ```
+
+`media.asrUrl` is an optional absolute HTTP(S) URL to the complete original-source
+ASR JSON (`rich_result` and `speaker_mapping`, timestamps in source milliseconds).
+It is preserved by CLI project reads/writes and browser saves, so another device
+can download and reuse the transcript without running ASR again. Trims and speed
+changes do not alter it. The CLI stores the URL without fetching it; availability
+and expiry are controlled by the ASR service. Existing projects may omit it.
 
 ### props reference
 

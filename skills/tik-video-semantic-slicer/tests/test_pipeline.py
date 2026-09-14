@@ -1,10 +1,12 @@
 """Offline behavioral tests. Fixtures are synthetic, never presented as real ASR."""
 import copy
 import json
+import http.server
 import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -109,6 +111,54 @@ class BridgeTests(unittest.TestCase):
         self.assertEqual({s["speaker_id"] for s in summary["speakers"]}, {"s1:0", "s2:0"})
         self.assertEqual(before, Path(one["transcript"]).read_bytes())
 
+    def test_another_device_downloads_project_asr_and_builds_identical_indices(self):
+        source = self.source()
+        raw = read_json(source["transcript"])
+        for word in raw["rich_result"]["sentences"][0]["words"]:
+            word["channel_id"] = 0
+        write_json(source["transcript"], raw)
+        expected = transcribe_bridge({"sources": [source]})
+        body = Path(source["transcript"]).read_bytes()
+        requests = []
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                requests.append(self.headers.get("Authorization"))
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *args):
+                pass
+
+        server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(thread.join)
+        self.addCleanup(server.shutdown)
+        project = {"media": [{"id": "m1", "asrUrl": f"http://127.0.0.1:{server.server_port}/asr.json"}]}
+        other = self.root / "other-device" / "audio.json"
+        result = subprocess.run([sys.executable, str(SKILL.parent / "tik-audio-asr/scripts/download_result.py"),
+                                 project["media"][0]["asrUrl"], "--output", str(other)],
+                                capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(other.read_bytes(), body)
+        self.assertEqual(requests, [None])
+        source.update(transcript=str(other), asr_url=project["media"][0]["asrUrl"])
+        self.assertEqual(transcribe_bridge({"sources": [source]}), expected)
+
+    def test_binding_requires_matching_asr_url_when_recorded(self):
+        for actual in (None, "https://example.com/wrong.json", "https://example.com/s1.json"):
+            source = {"id": "s1", "asr_url": "https://example.com/s1.json"}
+            imported = {"ok": True, "media": {"id": "m1", "kind": "video", "asrUrl": actual}}
+            if actual == source["asr_url"]:
+                self.assertEqual(bind_media({"sources": [source]}, "s1", imported)["sources"][0]["media_id"], "m1")
+            else:
+                with self.assertRaisesRegex(ValueError, "ASR URL"):
+                    bind_media({"sources": [source]}, "s1", imported)
+                self.assertNotIn("media_id", source)
+
     def test_missing_words_preserves_whole_sentence(self):
         data, _ = transcribe_bridge({"sources": [self.source(words=False)]})
         self.assertEqual(len(data["sentences"]), 1)
@@ -183,6 +233,23 @@ class EditTests(unittest.TestCase):
         self.assertIn("已核对工程", text)
         self.assertIn("s2 0.000–5.000", text)
         self.assertIn("36.364", text)
+
+    def test_asr_urls_follow_each_source_and_are_checked_after_submission(self):
+        for source, media in zip(self.sources["sources"], self.project["media"]):
+            source["asr_url"] = media["asrUrl"] = f"https://example.com/{source['id']}.json"
+        ops, mapping = self.build()
+        project = apply_ops(self.project, ops)
+        verify(project, mapping)
+        self.assertEqual({entry["source_id"]: entry["asr_url"] for entry in mapping["entries"]},
+                         {s["id"]: s["asr_url"] for s in self.sources["sources"]})
+        for value in (None, "https://example.com/wrong.json"):
+            with self.subTest(value=value):
+                project["media"][0]["asrUrl"] = value
+                with self.assertRaisesRegex(ValueError, "ASR URL"):
+                    verify(project, mapping)
+        self.project["media"][0].pop("asrUrl")
+        with self.assertRaisesRegex(ValueError, "ASR URL"):
+            self.build()
 
     def test_speaker_filter_keeps_numbers_and_rejects_selected_exclusions(self):
         original = copy.deepcopy(self.s)

@@ -37,6 +37,17 @@ Web 编辑器运行时，启动后不依赖 FableCut 源码仓库。
 
 运行 `tik-editvideo-cli --help` 查看全部命令和参数。
 
+导入素材时可附带已有 ASR 结果地址：
+
+```bash
+tik-editvideo-cli import-media --project default --path /absolute/path/intro.mp4 --asr-url "https://example.com/intro-asr.json"
+```
+
+`--asr-url` 为可选 HTTP(S) 地址，保存为 `media.asrUrl`；`addMedia` 也支持该字段。
+完整工程及浏览器保存会保留它，其他设备可下载复用 `rich_result` 与 `speaker_mapping`
+（原始素材毫秒时间戳）。紧凑摘要仅显示 `asr=yes`，实际地址读取完整工程。CLI 不下载
+ASR 内容，链接有效期由 ASR 服务决定；未记录 URL 的旧工程保持兼容。
+
 ## 开发阶段验证
 
 首次在源码仓库中建立全局开发链接：

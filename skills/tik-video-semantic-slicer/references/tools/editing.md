@@ -10,7 +10,7 @@
 tik-editvideo-cli create-project --name "服装语义切片"
 ```
 
-每个原始文件使用 `import-media --project <真实ID> --path <绝对路径>`，成功 JSON 保存到该素材的 import.json，用 selection_tools.py bind-media 写入 sources.json。素材 ID 与远端 media.src 均以 CLI 返回的信息为准。
+每个原始文件使用 `import-media --project <真实ID> --path <绝对路径> --asr-url <对应source.asr_url>`，成功 JSON 保存到该素材的 import.json，用 selection_tools.py bind-media 写入 sources.json。绑定时检查返回的 `media.asrUrl` 与 source 一致。素材 ID 与远端 media.src 均以 CLI 返回的信息为准。复用已注册素材时直接使用其真实 ID 与 asrUrl，不重复导入；旧作业没有 URL 时省略该参数，不伪造地址。
 
 生成操作前运行 `get-project --project <真实ID>` 保存完整原生项目文档为 project.json，记录实际 revision。紧凑摘要只供快速检查，不能代替完整项目作为脚本输入。
 
@@ -38,7 +38,7 @@ tik-editvideo-cli patch-project --project "$PROJECT_ID" --ops "$(cat "$RUN_DIR/i
 python3 "$SKILL_DIR/scripts/verify_output.py" --project "$RUN_DIR/intermediate/project.json" --mapping "$RUN_DIR/intermediate/pending_mapping.json"
 ```
 
-通过后把 pending_mapping.json 内容保存为 submitted_mapping.json；本地快照、映射和业务配置共同用于下一轮修改，但远端实际工程仍是已提交时间线的依据。revision 冲突由 CLI 处理；读回内容不符时说明差异，不用 set-project --force 覆盖。
+验证同时检查 mapping 中已记录的 ASR URL 是否仍保存在对应素材上。通过后把 pending_mapping.json 内容保存为 submitted_mapping.json；本地快照、映射和业务配置共同用于下一轮修改，但远端实际工程仍是已提交时间线的依据。revision 冲突由 CLI 处理；读回内容不符时说明差异，不用 set-project --force 覆盖。
 
 ## 字幕与句内调整
 
@@ -66,4 +66,4 @@ python3 "$SKILL_DIR/scripts/verify_output.py" --project "$RUN_DIR/intermediate/p
 
 检查 FPS、响度、字幕安全区和切点听感；程序不判断业务语义或口型同步。预览链接为实际 `FABLECUT_URL` 加 `/?project=<真实ID>`，未配置服务地址时使用 CLI 文档的默认 `http://127.0.0.1:7777`。Token 不放进链接；本地地址不能宣称为外网可分享链接。
 
-最终展示：可点击的 MP4、项目预览、工程快照与独立配置/映射/审核路径、render_selection 从工程渲染的完整脚本。按 editorial.md 分别报告工程、内容审核记录、画面和听感状态；能力缺失交待验稿，不标成全部验收通过。
+最终展示：可点击的 MP4、项目预览、包含素材 asrUrl 的完整工程快照与独立配置/映射/审核路径、render_selection 从工程渲染的完整脚本。其他设备可从工程的素材 URL 下载复用 ASR。按 editorial.md 分别报告工程、内容审核记录、画面和听感状态；能力缺失交待验稿，不标成全部验收通过。

@@ -8,7 +8,7 @@ run 根目录放 `<作业名>_<倍速>x.mp4`；字幕版另存 `<作业名>_<倍
 
 | 文件 | 内容 |
 | --- | --- |
-| sources.json | 原始素材、探查/ASR路径、可选范围、导入ID |
+| sources.json | 原始素材、探查/ASR路径、ASR URL、可选范围、导入ID |
 | s1/video_info.json、audio_info.json、audio.json | 每素材的探查与原始ASR；更多素材用s2等 |
 | sentences.json、speakers_summary.json | 稳定全量短语与声音摘要 |
 | content.json | 商品区间与语义组，模型标注，不改原ASR |
@@ -31,7 +31,19 @@ python3 "$SKILL_DIR/scripts/probe_video.py" "/绝对路径/素材.mp4" --out "$R
 python3 "$SKILL_DIR/scripts/probe_video.py" "/绝对路径/素材.mp4" --audio "$RUN_DIR/intermediate/s1/audio.mp3" --out "$RUN_DIR/intermediate/s1/audio_info.json"
 ```
 
-原点差>0.1秒、时长差>0.5秒失败。非均匀漂移不得用常数补偿；检查素材和提取步骤，不伪造时间戳。复核成功才转写，标准输出唯一 JSON 原样保存 audio.json，错误信息遮蔽凭据；成功后清理临时音频。
+原点差>0.1秒、时长差>0.5秒失败。非均匀漂移不得用常数补偿；检查素材和提取步骤，不伪造时间戳。复核成功才转写，明确要求 JSON URL：
+
+```bash
+python3 "$SKILL_DIR/../tik-audio-asr/scripts/transcribe.py" transcribe "$RUN_DIR/intermediate/s1/audio.mp3" --return-mode 1
+```
+
+将返回的 `json_url` 保存为该 source 的 `asr_url`，再下载原始内容到 `transcript` 指定的 audio.json；不要把 URL 包装对象当成转写正文：
+
+```bash
+python3 "$SKILL_DIR/../tik-audio-asr/scripts/download_result.py" "$ASR_URL" --output "$RUN_DIR/intermediate/s1/audio.json"
+```
+
+`ASR_URL` 使用真实返回地址。转写成功后清理临时音频；下载失败保留 URL 并报告，不重新转写。已有工程时，先从对应 `media.asrUrl` 取得地址并下载，跳过凭据检查、音频提取和转写；已有本地原始 JSON 则直接复用。
 
 sources.json 的顶层为 sources 数组，每项例如：
 ```json
@@ -40,12 +52,13 @@ sources.json 的顶层为 sources 数组，每项例如：
     "id": "s1",
     "path": "/绝对路径/源视频.mp4",
     "probe": "/绝对路径/run/intermediate/s1/video_info.json",
-    "transcript": "/绝对路径/run/intermediate/s1/audio.json"
+    "transcript": "/绝对路径/run/intermediate/s1/audio.json",
+    "asr_url": "https://example.com/s1-asr.json"
   }]
 }
 ```
 
-用户指定范围才加 range: [起秒, 止秒]，只允许完整落入范围的短语。media_id 在导入后由工具写入，不先填示例ID。素材顺序决定跨文件 index 顺序。
+用户指定范围才加 range: [起秒, 止秒]，只允许完整落入范围的短语。media_id 在导入后由工具写入，不先填示例ID；复用已有工程时使用其中真实素材 ID。新转写须记录 asr_url，旧作业未记录时仍可复用其本地结果。素材顺序决定跨文件 index 顺序。
 
 ```bash
 python3 "$SKILL_DIR/scripts/build_sentences.py" --sources "$RUN_DIR/intermediate/sources.json" --out "$RUN_DIR/intermediate"

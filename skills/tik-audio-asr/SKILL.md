@@ -16,15 +16,17 @@ description: 将本地音频或视频语音转写为 JSON，包含文本、毫�
    ```
 
    仅在转写完成后删除该临时文件；若系统没有 `ffmpeg`，说明无法在当前环境提取音频。
-4. 执行随 skill 提供的脚本：
+4. 用户或调用方明确要求以 JSON URL 交付时使用 `--return-mode 1`；否则使用 `0`（默认）：
 
    ```bash
-   python3 "<skill目录>/scripts/transcribe.py" transcribe "<音频绝对路径>"
+   python3 "<skill目录>/scripts/transcribe.py" transcribe "<音频绝对路径>" --return-mode 0
    ```
 
 5. 成功时，原样返回标准输出中的唯一 JSON 对象。失败时，依据标准错误的 JSON 错误说明问题，且不得暴露 API Key、上传地址或其他凭据。
 
 ## 输出
+
+模式 `1` 原样交付 `{"json_url":"https://example.com/result.json"}`，不展开链接内容。链接中的 JSON 与模式 `0` 的结果结构一致。模式 `0` 返回：
 
 - `rich_result.duration`：音频总时长，单位为毫秒。
 - `rich_result.sentences`：按时间顺序排列的句子；每项包含 `begin_time`、`end_time`（毫秒）、`text`、`channel_id` 和 `words`。
@@ -55,4 +57,6 @@ description: 将本地音频或视频语音转写为 JSON，包含文本、毫�
 }
 ```
 
-只将受支持的音频路径传给转写脚本，不要直接传入视频路径。原样保留脚本返回的 `rich_result` 与 `speaker_mapping`，不要重建、补全或伪造时间戳和发音人信息。
+只将受支持的音频路径传给转写脚本，不要直接传入视频路径。原样保留结果，不要重建、补全或伪造时间戳和发音人信息。
+
+调用方需要读取已有 JSON URL 时，可运行 `python3 "<skill目录>/scripts/download_result.py" "<json_url>" --output "<本地JSON路径>"`。它保存原始内容，不重复转写、不覆盖已有文件；下载失败时报告问题。

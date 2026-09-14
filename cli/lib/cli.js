@@ -150,6 +150,7 @@ function requireProject(project) {
 }
 
 function validateDocument(project) {
+  for (const media of project.media) if (media && media.asrUrl !== undefined) validateAsrUrl(media.asrUrl);
   const mediaIds = new Set(project.media.filter((x) => x && typeof x === "object").map((x) => x.id));
   for (const clip of project.clips) {
     if (!clip || typeof clip !== "object") throw new CliError("Each clip must be an object");
@@ -158,6 +159,17 @@ function validateDocument(project) {
     if (!new Set(["text", "adjust"]).has(clip.kind) && !mediaIds.has(clip.mediaId))
       throw new CliError(`Clip ${clip.id} references unknown mediaId: ${clip.mediaId}`);
   }
+}
+
+function validateAsrUrl(value) {
+  try {
+    const url = typeof value === "string" && new URL(value);
+    if (!url || !/^https?:\/\//i.test(value) || !/^https?:$/.test(url.protocol) || !url.hostname || url.username || url.password || /[\s\\]/.test(value))
+      throw new Error("invalid URL");
+  } catch {
+    throw new CliError("asrUrl / --asr-url must be an absolute HTTP(S) URL without credentials");
+  }
+  return value;
 }
 
 function newId(prefix) { return prefix + require("crypto").randomBytes(4).toString("hex"); }
@@ -200,6 +212,7 @@ function applyOps(project, ops) {
     } else if (operation.op === "addMedia") {
       const media = clone(operation.media || {});
       if (!media.src || !media.kind) throw new CliError("addMedia requires media.src and media.kind");
+      if (media.asrUrl !== undefined) validateAsrUrl(media.asrUrl);
       media.id ||= newId("m_"); media.name ||= decodeURIComponent(path.basename(media.src));
       if (result.media.some((item) => item.id === media.id)) throw new CliError("addMedia duplicate media id: " + media.id);
       result.media.push(media); notes.push("+" + media.id);
@@ -241,7 +254,7 @@ function number(value) { return typeof value === "number" ? String(Math.round(va
 function compactProject(id, project) {
   const duration = project.clips.reduce((max, clip) => Math.max(max, Number(clip.start || 0) + Number(clip.duration || 0)), 0);
   const lines = [`Project ${id} | ${project.name || ""} | ${project.width}x${project.height} @${project.fps}fps | ${number(duration)}s | revision ${project.revision || 0}`, `Media ${project.media.length} | Clips ${project.clips.length}`];
-  for (const media of project.media) lines.push(`M ${media.id} ${media.kind} ${media.name || ""}${media.duration == null ? "" : " " + number(media.duration) + "s"}`);
+  for (const media of project.media) lines.push(`M ${media.id} ${media.kind} ${media.name || ""}${media.duration == null ? "" : " " + number(media.duration) + "s"}${media.asrUrl ? " asr=yes" : ""}`);
   for (const clip of [...project.clips].sort((a, b) => String(a.track).localeCompare(String(b.track)) || Number(a.start) - Number(b.start))) {
     const props = Object.fromEntries(Object.entries(clip.props || {}).filter(([key, value]) => !(key in DEFAULT_PROPS) || DEFAULT_PROPS[key] !== value));
     const extras = [];
@@ -380,7 +393,7 @@ Usage:
   tik-editvideo-cli get-project --project <id> [--compact]
   tik-editvideo-cli patch-project --project <id> --ops '<JSON array>'
   tik-editvideo-cli set-project --project <id> --document '<JSON object>' [--force]
-  tik-editvideo-cli import-media --project <id> --path <file>
+  tik-editvideo-cli import-media --project <id> --path <file> [--asr-url <url>]
   tik-editvideo-cli export --project <id> [--name <name>] [--output <mp4>] [--force]
                      [--browser <path>] [--timeout <seconds>]
 
@@ -425,12 +438,14 @@ async function main(argv = process.argv.slice(2)) {
     console.log(JSON.stringify({ ok:true, project:id, revision:project.revision, response }, null, 2));
   } else if (command === "import-media") {
     const id = requireOption(options, "project"), source = path.resolve(requireOption(options, "path"));
+    const asrUrl = options["asr-url"] === undefined ? undefined : validateAsrUrl(requireOption(options, "asr-url"));
     if (!fs.statSync(source, { throwIfNoEntry:false })?.isFile()) throw new CliError("Media file not found: " + source);
     const kind = KIND_BY_EXT.get(path.extname(source).toLowerCase());
     if (!kind) throw new CliError("Unsupported media extension: " + (path.extname(source) || "(none)"));
     const uploaded = await client.request("POST", "/api/upload", { query:{ project:id, name:path.basename(source) }, file:source });
     if (!uploaded.src) throw new CliError("Upload response did not contain src");
     const media = { id:newId("m_"), name:decodeURIComponent(path.basename(uploaded.src)), kind, src:uploaded.src };
+    if (asrUrl !== undefined) media.asrUrl = asrUrl;
     let result;
     try { result = await patchProject(client, id, [{ op:"addMedia", media }]); }
     catch (error) { throw new CliError(`File uploaded to ${uploaded.src}, but registration failed: ${error.message}`); }
