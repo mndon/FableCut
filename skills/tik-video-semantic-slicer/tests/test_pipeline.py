@@ -17,6 +17,8 @@ from build_sentences import build as transcribe_bridge
 from common import read_json, write_json
 from render_selection import render, render_index
 from verify_output import verify
+from editorial import findings, review_draft, validate_review
+from selection_tools import bind_media, estimate, query
 
 
 def apply_ops(project, ops):
@@ -55,7 +57,7 @@ def fixture():
             "text": "衣服很舒服", "speaker": "说话人1", "speaker_id": source + ":0",
             "eligible": True, "words": words})
     selection = {"template": "内容策略", "keep_indices": list(range(8))}
-    config = {"namespace": "test_cut", "speed": 1.1, "target_duration": 36,
+    config = {"namespace": "test_cut", "product_id": "p1", "speed": 1.1, "target_duration": 36,
         "allowed_speakers": ["s1:0", "s2:0"],
         "groups": {"hook": [0, 1], "value": [2, 3, 4, 5], "close": [6, 7]}, "subtitles": False}
     sources = {"sources": [{"id": "s1", "media_id": "m1"}, {"id": "s2", "media_id": "m2"}]}
@@ -63,6 +65,22 @@ def fixture():
         "media": [{"id": "m1", "kind": "video", "duration": 24, "src": "/test/one.mp4"},
                   {"id": "m2", "kind": "video", "duration": 24, "src": "/test/two.mp4"}], "clips": []}
     return sentences, selection, config, sources, project
+
+
+def content_fixture():
+    return {"products": [{"id": "p1", "label": "测试商品", "spans": [[0, 3], [4, 7]],
+                          "evidence": "合成测试：两素材展示同款"}],
+            "units": [[0, 1], [2], [3], [4], [5], [6, 7]]}
+
+
+def reviewed(s, sel, cfg, content):
+    """Synthetic reviewer input for offline engineering tests, not an auto-approver."""
+    review = review_draft(s, sel, cfg, content)
+    for check in review["checks"]:
+        check.update(indices=sel["keep_indices"], status="pass", evidence="合成审核依据")
+    for issue in review["issues"]:
+        issue.update(status="dismissed", resolution="合成测试的重复占位文本")
+    return review
 
 
 class BridgeTests(unittest.TestCase):
@@ -147,9 +165,11 @@ class BridgeTests(unittest.TestCase):
 class EditTests(unittest.TestCase):
     def setUp(self):
         self.s, self.sel, self.cfg, self.sources, self.project = fixture()
+        self.content = content_fixture()
 
     def build(self, previous=None):
-        return build(self.s, self.sel, self.cfg, self.sources, self.project, "test-project", previous)
+        return build(self.s, self.sel, self.cfg, self.sources, self.project, "test-project", previous,
+                     self.content, reviewed(self.s, self.sel, self.cfg, self.content))
 
     def test_multi_source_speed_and_project_backed_display(self):
         ops, mapping = self.build()
@@ -159,7 +179,7 @@ class EditTests(unittest.TestCase):
         self.assertEqual(project["clips"][4]["mediaId"], "m2")
         self.assertEqual(project["clips"][4]["in"], 0)
         verify(project, mapping)
-        text = render(self.s, self.cfg, self.sel, project=project, mapping=mapping)
+        text = render(self.s, self.cfg, self.sel, project=project, mapping=mapping, content=self.content)
         self.assertIn("已核对工程", text)
         self.assertIn("s2 0.000–5.000", text)
         self.assertIn("36.364", text)
@@ -206,7 +226,7 @@ class EditTests(unittest.TestCase):
         for v, t in zip(videos, subtitles):
             self.assertEqual(v["clip"]["start"], t["clip"]["start"])
             self.assertEqual(v["clip"]["duration"], t["clip"]["duration"])
-        text = render(self.s, self.cfg, self.sel, project=actual, mapping=mapping)
+        text = render(self.s, self.cfg, self.sel, project=actual, mapping=mapping, content=self.content)
         self.assertIn("衣服", text)
         rows = [line for line in text.splitlines() if line.startswith("| 3 |")]
         self.assertEqual(len(rows), 2)

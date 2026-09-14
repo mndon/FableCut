@@ -10,19 +10,19 @@
 tik-editvideo-cli create-project --name "服装语义切片"
 ```
 
-每个原始文件使用 `import-media --project <真实ID> --path <绝对路径>`，把返回 media.id 填入 sources.json。素材 ID 与远端 media.src 均以 CLI 返回的信息为准。
+每个原始文件使用 `import-media --project <真实ID> --path <绝对路径>`，成功 JSON 保存到该素材的 import.json，用 selection_tools.py bind-media 写入 sources.json。素材 ID 与远端 media.src 均以 CLI 返回的信息为准。
 
 生成操作前运行 `get-project --project <真实ID>` 保存完整原生项目文档为 project.json，记录实际 revision。紧凑摘要只供快速检查，不能代替完整项目作为脚本输入。
 
 ## 生成与提交
 
 ```bash
-python3 "$SKILL_DIR/scripts/build_edit_ops.py" --sentences "$RUN_DIR/intermediate/sentences.json" --selection "$RUN_DIR/intermediate/keep_selection.json" --config "$RUN_DIR/intermediate/edit_config.json" --sources "$RUN_DIR/intermediate/sources.json" --project "$RUN_DIR/intermediate/project.json" --project-id "$PROJECT_ID" --out "$RUN_DIR/intermediate"
+python3 "$SKILL_DIR/scripts/build_edit_ops.py" --sentences "$RUN_DIR/intermediate/sentences.json" --selection "$RUN_DIR/intermediate/keep_selection.json" --config "$RUN_DIR/intermediate/edit_config.json" --content "$RUN_DIR/intermediate/content.json" --review "$RUN_DIR/intermediate/review.json" --sources "$RUN_DIR/intermediate/sources.json" --project "$RUN_DIR/intermediate/project.json" --project-id "$PROJECT_ID" --out "$RUN_DIR/intermediate"
 ```
 
 修改已提交作品时额外传 `--previous "$RUN_DIR/intermediate/submitted_mapping.json"`。上轮 mapping 只在上轮提交读回验证通过后存在，不能用本轮 pending 文件冒充。生成器会检查上一轮工程几何是否仍匹配，并只删除/更新该 mapping 管理的片段；不删除素材或无关片段。
 
-脚本先验证选择、分组、说话人范围和时长，再生成 ops.json / pending_mapping.json；它不联系服务、不执行 CLI、不生成成片。目标偏差超过 5 秒会提醒，切片师应对照用户期望调整；35–90 秒以变速和转场后的实际总长校验。
+建工程前先用 selection_tools.py estimate 试算，并完成 editorial.md 的审核。生成器验证单商品、完整语义组、声音范围、时长及审核指纹，再写 ops.json / pending_mapping.json；记录完整不代表语义已被程序证明。它不联系服务、不执行 CLI。目标偏差超过5秒提醒；35–90秒按变速和转场后总长校验。
 
 将 ops.json 的内容作为单个字符串实参交给 CLI。下面是安全的文件读入方式：引用路径变量，命令替换只读取文件，JSON 内容不会作为 shell 代码再次解释。
 
@@ -66,4 +66,4 @@ python3 "$SKILL_DIR/scripts/verify_output.py" --project "$RUN_DIR/intermediate/p
 
 检查 FPS、响度、字幕安全区和切点听感；程序不判断业务语义或口型同步。预览链接为实际 `FABLECUT_URL` 加 `/?project=<真实ID>`，未配置服务地址时使用 CLI 文档的默认 `http://127.0.0.1:7777`。Token 不放进链接；本地地址不能宣称为外网可分享链接。
 
-最终展示：可点击的 MP4 路径、项目预览链接、工程快照路径、render_selection 从工程渲染的完整脚本，以及按编号修改的简短引导。
+最终展示：可点击的 MP4、项目预览、工程快照与独立配置/映射/审核路径、render_selection 从工程渲染的完整脚本。按 editorial.md 分别报告工程、内容审核记录、画面和听感状态；能力缺失交待验稿，不标成全部验收通过。

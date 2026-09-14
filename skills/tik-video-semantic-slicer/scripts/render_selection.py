@@ -2,7 +2,8 @@
 import argparse
 
 from build_edit_ops import check_project_mapping, refined_parts
-from common import MODULES, main_guard, number, read_json, unique_map, validate_selection
+from common import MODULES, main_guard, number, read_json, selected_units, unique_map, validate_selection
+from editorial import fingerprint
 
 
 def cell(value):
@@ -15,24 +16,33 @@ def render_index(sentences):
                      for s in sentences["sentences"])
 
 
-def render(sentences, config=None, selection=None, hook=None, speed=None, project=None, mapping=None, label=None):
+def render(sentences, config=None, selection=None, hook=None, speed=None, project=None, mapping=None, label=None, content=None):
     indexed = unique_map(sentences["sentences"], "index")
     if hook is not None:
         if not hook or len(set(hook)) != len(hook) or any(i not in indexed for i in hook):
             raise ValueError("Hook indices must be nonempty, valid and unique")
         if any(not indexed[i]["eligible"] for i in hook):
             raise ValueError("Hook contains out-of-range material")
+        if content is not None:
+            units = selected_units(sentences, content, hook, config["product_id"])
+            rule = next(m for m in MODULES if m["key"] == "hook")
+            if hook != sorted(hook) or not rule["min"] <= len(units) <= rule["max"]:
+                raise ValueError("Hook must use the allowed number of source-ordered semantic units")
+        if config and config.get("allowed_speakers") and any(indexed[i]["speaker_id"] not in config["allowed_speakers"] for i in hook):
+            raise ValueError("Hook conflicts with retained speakers")
         groups = {"hook": hook}
         if project is not None or mapping is not None:
             raise ValueError("Project mapping is for full script display")
     else:
-        validate_selection(sentences, selection, config)
+        validate_selection(sentences, selection, config, content)
         groups = config["groups"]
         speed = number(config["speed"], "speed", 0.25, 4)
     rows = {}
     if (project is None) != (mapping is None):
         raise ValueError("--project and --mapping must be supplied together")
     if project is not None:
+        if mapping.get("content_fingerprint") and (content is None or mapping["content_fingerprint"] != fingerprint(sentences, selection, config, content)):
+            raise ValueError("Content/config differs from the submitted mapping")
         if mapping["groups"] != groups:
             raise ValueError("Current groups differ from the submitted mapping")
         actual = check_project_mapping(project, mapping)
@@ -89,10 +99,12 @@ def main():
     parser.add_argument("--index", action="store_true")
     parser.add_argument("--hook", help="Comma-separated stable indices; candidate mode only")
     parser.add_argument("--speed", type=float, help="Candidate timing only, when speed is already agreed")
-    for name in ("selection", "config", "project", "mapping", "label"):
+    for name in ("selection", "config", "project", "mapping", "label", "content"):
         parser.add_argument("--" + name)
     args = parser.parse_args()
     sentences = read_json(args.sentences)
+    if args.content and not args.config:
+        raise ValueError("--content requires --config with product_id")
     if args.index:
         if any((args.hook, args.selection, args.config, args.project, args.mapping)):
             raise ValueError("--index cannot be combined with selection/project options")
@@ -104,7 +116,8 @@ def main():
         print(render(sentences, read_json(args.config) if args.config else None,
                      read_json(args.selection) if args.selection else None, hook, args.speed,
                      read_json(args.project) if args.project else None,
-                     read_json(args.mapping) if args.mapping else None, args.label))
+                     read_json(args.mapping) if args.mapping else None, args.label,
+                     read_json(args.content) if args.content else None))
 
 
 if __name__ == "__main__":

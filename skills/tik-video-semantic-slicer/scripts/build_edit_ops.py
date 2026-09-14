@@ -3,8 +3,9 @@ import argparse
 import re
 from pathlib import Path
 
-from common import (EPS, TRANSITIONS, main_guard, number, read_json, unique_map,
+from common import (EPS, TRANSITIONS, main_guard, number, read_json, selected_units, unique_map,
                     validate_selection, write_json)
+from editorial import validate_review
 
 
 def refined_parts(sentence, refinements):
@@ -69,8 +70,11 @@ def check_project_mapping(project, mapping):
     return actual
 
 
-def build(sentences, selection, config, sources, project, project_id, previous=None):
-    selected = validate_selection(sentences, selection, config)
+def build(sentences, selection, config, sources, project, project_id, previous=None, content=None, review=None):
+    if content is None:
+        raise ValueError("Missing content.json; annotate products and semantic units first")
+    selected = validate_selection(sentences, selection, config, content)
+    validate_review(sentences, selection, config, content, review)
     speed = number(config["speed"], "speed", 0.25, 4)
     target = number(config["target_duration"], "target_duration", 35, 90)
     namespace = config["namespace"]
@@ -187,29 +191,33 @@ def build(sentences, selection, config, sources, project, project_id, previous=N
             ops.append({"op": "addClip", "clip": clip})
     mapping = {"project_id": project_id, "namespace": namespace, "base_revision": project["revision"],
                "duration": cursor, "target_duration": target, "groups": config["groups"],
-               "project_settings": settings, "entries": entries}
+               "project_settings": settings, "entries": entries,
+               "content_fingerprint": review["fingerprint"], "product_id": config["product_id"]}
     return ops, mapping
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    for arg in ("sentences", "selection", "config", "sources", "project", "project-id", "out"):
+    for arg in ("sentences", "selection", "config", "content", "review", "sources", "project", "project-id", "out"):
         parser.add_argument("--" + arg, required=True)
     parser.add_argument("--previous", help="Only the mapping verified after the last successful patch")
     args = parser.parse_args()
     sentences, selection = read_json(args.sentences), read_json(args.selection)
     ops, mapping = build(sentences, selection, read_json(args.config),
                          read_json(args.sources), read_json(args.project), args.project_id,
-                         read_json(args.previous) if args.previous else None)
+                         read_json(args.previous) if args.previous else None,
+                         read_json(args.content), read_json(args.review))
     out = Path(args.out)
     write_json(out / "ops.json", ops)
     write_json(out / "pending_mapping.json", mapping)
     print(f"[通过] {len(ops)} patch operations; cut {mapping['duration']:.3f}s, target {mapping['target_duration']:g}s")
-    selected_indices = set(selection["keep_indices"])
-    unusual = [s["index"] for s in sentences["sentences"]
-               if s["index"] in selected_indices and not 1 <= s["end"] - s["start"] <= 7]
+    indexed = unique_map(sentences["sentences"], "index")
+    config, content = read_json(args.config), read_json(args.content)
+    units = selected_units(sentences, content, selection["keep_indices"], config["product_id"])
+    unusual = [unit for unit in units if not 1 <= sum(end - start for i in unit
+               for start, end, _ in refined_parts(indexed[i], config.get("refinements", {}))) <= 7]
     if unusual:
-        print(f"[提醒] Source phrases outside the soft 1–7s preference: {unusual}")
+        print(f"[提醒] Semantic units outside the soft 1–7s preference: {unusual}")
     if abs(mapping["duration"] - mapping["target_duration"]) > 5:
         print("[提醒] More than 5s from the requested target; review the selection before submission")
 

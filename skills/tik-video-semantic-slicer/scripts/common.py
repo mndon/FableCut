@@ -41,7 +41,7 @@ def unique_map(items, key):
     return result
 
 
-def validate_selection(sentences, selection, config):
+def validate_selection(sentences, selection, config, content=None):
     indexed = unique_map(sentences["sentences"], "index")
     indices = selection["keep_indices"]
     if selection.get("template") != "内容策略":
@@ -54,8 +54,11 @@ def validate_selection(sentences, selection, config):
     ordered = []
     for module in MODULES:
         group = groups[module["key"]]
-        if len(group) < module["min"] or (module["max"] is not None and len(group) > module["max"]):
-            raise ValueError(f"Module sentence count: {module['key']}")
+        count = len(group) if content is None else len(selected_units(sentences, content, group, config["product_id"]))
+        # Legacy snapshots used phrase counts; require semantic units for new patches.
+        lo, hi = (module["min"], module["max"]) if content is not None else {"hook": (2, 5), "value": (0, None), "close": (2, 3)}[module["key"]]
+        if count < lo or (hi is not None and count > hi):
+            raise ValueError(f"Module semantic unit count: {module['key']}")
         ordered.extend(group)
     if ordered != indices:
         raise ValueError("Module concatenation must exactly equal keep_indices, including order")
@@ -78,6 +81,48 @@ def validate_selection(sentences, selection, config):
             raise ValueError(f"Sentence {index} has no positive duration")
         selected.append(sentence)
     return selected
+
+
+def selected_units(sentences, content, indices, product_id):
+    """Validate explicit product spans and whole units, without inferring identity."""
+    indexed = unique_map(sentences["sentences"], "index")
+    products = unique_map(content["products"], "id")
+    if product_id not in products:
+        raise ValueError("Unknown product_id")
+    owners = {}
+    for pid, product in products.items():
+        if not product.get("label") or not str(product.get("evidence", "")).strip() or not product["spans"]:
+            raise ValueError("Product needs label, spans and identity evidence")
+        for first, last in product["spans"]:
+            if type(first) is not int or type(last) is not int or first > last:
+                raise ValueError("Product spans use inclusive stable integer indices")
+            rows = [indexed.get(i) for i in range(first, last + 1)]
+            if not all(rows) or len({s["source_id"] for s in rows}) != 1:
+                raise ValueError("Product span must stay within one source")
+            for s in rows:
+                i = s["index"]
+                if i in owners:
+                    raise ValueError(f"Overlapping product spans at {i}")
+                owners[i] = pid
+    units, seen = [], set()
+    for unit in content["units"]:
+        if not unit or any(type(i) is not int or i not in indexed for i in unit):
+            raise ValueError("Semantic unit needs valid integer indices")
+        if unit != sorted(set(unit)) or seen.intersection(unit):
+            raise ValueError("Semantic units must be ordered and disjoint")
+        if len({indexed[i]["source_id"] for i in unit}) != 1 or None in {owners.get(i) for i in unit} or len({owners[i] for i in unit}) != 1:
+            raise ValueError("Semantic unit crosses a source/product or has unknown ownership")
+        seen.update(unit)
+        if set(unit).intersection(indices):
+            if not set(unit).issubset(indices):
+                raise ValueError(f"Partial semantic unit selected: {unit}")
+            if owners[unit[0]] != product_id:
+                raise ValueError(f"Cross-product selection: {unit}")
+            units.append(unit)
+    units.sort(key=lambda u: indices.index(u[0]))
+    if [i for unit in units for i in unit] != indices:
+        raise ValueError("Selected indices must be covered by whole ordered semantic units")
+    return units
 
 
 def ffprobe(path):
