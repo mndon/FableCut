@@ -2,15 +2,11 @@
 
 const fs = require("fs");
 const http = require("http");
-const https = require("https");
 const os = require("os");
 const path = require("path");
 const { spawn, spawnSync } = require("child_process");
 const { pipeline } = require("stream/promises");
 const { URL } = require("url");
-const DEFAULT_DATA_DIR = path.join(os.homedir(), ".tik-editvideo-cli");
-const LEGACY_DATA_DIR = path.join(os.homedir(), ".fablecut");
-
 class CliError extends Error {
   constructor(message, exitCode = 1) { super(message); this.exitCode = exitCode; }
 }
@@ -62,26 +58,13 @@ function runtimeDir() {
   throw new CliError("FableCut runtime is missing; run 'npm run sync-runtime' in the CLI source directory or reinstall tik-editvideo-cli");
 }
 
-function defaultDataDir() {
-  if (!fs.existsSync(DEFAULT_DATA_DIR) && fs.existsSync(LEGACY_DATA_DIR)) {
-    try { fs.renameSync(LEGACY_DATA_DIR, DEFAULT_DATA_DIR); }
-    catch (error) {
-      throw new CliError(
-        `Could not migrate ${LEGACY_DATA_DIR} to ${DEFAULT_DATA_DIR}: ${error.message}. ` +
-        "Fix the directory ownership or start with --data-dir <dir>"
-      );
-    }
-  }
-  return DEFAULT_DATA_DIR;
-}
-
-class Client {
-  constructor(rawUrl = process.env.FABLECUT_URL || "http://127.0.0.1:7777") {
-    try { this.base = new URL(rawUrl); } catch { throw new CliError("FABLECUT_URL must be a valid HTTP(S) URL"); }
-    if (!/^https?:$/.test(this.base.protocol)) throw new CliError("FABLECUT_URL must use http or https");
+// HTTP is used only to drive the local browser export and retrieve its output.
+class ExportClient {
+  constructor(rawUrl) {
+    try { this.base = new URL(rawUrl); } catch { throw new CliError("Server URL must be a valid local HTTP URL"); }
+    if (this.base.protocol !== "http:") throw new CliError("Local server URL must use http");
     if (this.base.username || this.base.password || this.base.search || this.base.hash)
-      throw new CliError("FABLECUT_URL must not contain credentials, query parameters, or a fragment");
-    this.token = (process.env.FABLECUT_TOKEN || "").trim();
+      throw new CliError("Server URL must not contain credentials, query parameters, or a fragment");
     this.basePath = this.base.pathname.replace(/\/$/, "");
   }
 
@@ -93,25 +76,14 @@ class Client {
     return url;
   }
 
-  request(method, apiPath, { query, json, file, response = "json" } = {}) {
-    if (json !== undefined && file) throw new CliError("A request cannot contain both JSON and a file");
+  request(method, apiPath, { query, response = "json" } = {}) {
     const url = this.target(apiPath, query);
-    const transport = url.protocol === "https:" ? https : http;
     const headers = { Accept: response === "json" ? "application/json" : "*/*", "User-Agent": "tik-editvideo-cli/1" };
-    if (this.token) headers.Authorization = "Bearer " + this.token;
-    let body = null;
-    if (json !== undefined) {
-      body = Buffer.from(JSON.stringify(json));
-      headers["Content-Type"] = "application/json; charset=utf-8";
-      headers["Content-Length"] = body.length;
-    } else if (file) {
-      headers["Content-Length"] = fs.statSync(file).size;
-      headers["Content-Type"] = "application/octet-stream";
-    }
     return new Promise((resolve, reject) => {
-      const req = transport.request(url, { method, headers, timeout: 120000 }, (res) => {
+      const req = http.request(url, { method, headers, timeout: 120000 }, (res) => {
         if (response === "stream" && res.statusCode >= 200 && res.statusCode < 300) { resolve(res); return; }
         const chunks = [];
+        res.on("error", reject);
         res.on("data", (chunk) => chunks.push(chunk));
         res.on("end", () => {
           const text = Buffer.concat(chunks).toString("utf8").trim();
@@ -119,7 +91,7 @@ class Client {
           if (text) { try { data = JSON.parse(text); } catch {} }
           else data = {};
           if (res.statusCode >= 300 && res.statusCode < 400)
-            return reject(new CliError(`HTTP ${res.statusCode}: redirect refused to protect credentials`));
+            return reject(new CliError(`HTTP ${res.statusCode}: unexpected redirect from local service`));
           if (res.statusCode < 200 || res.statusCode >= 300) {
             const detail = data && typeof data === "object" ? data.error || data.message : data;
             const error = new CliError(`HTTP ${res.statusCode}: ${detail || res.statusMessage}`);
@@ -132,13 +104,11 @@ class Client {
       req.on("error", (error) => {
         if (error instanceof CliError) { reject(error); return; }
         const hint = url.hostname === "127.0.0.1" || url.hostname === "localhost"
-          ? " Is the server running? Start it with: tik-editvideo-cli server start"
+          ? " Is the server running? Start it with: tik-editvideo-cli status"
           : "";
         reject(new CliError(`Request to ${url.origin} failed: ${networkErrorMessage(error)}.${hint}`));
       });
-      if (body) req.end(body);
-      else if (file) fs.createReadStream(file).on("error", reject).pipe(req);
-      else req.end();
+      req.end();
     });
   }
 }
@@ -236,19 +206,6 @@ function applyOps(project, ops) {
 }
 
 async function getProject(client, id) { return requireProject(await client.request("GET", "/api/project", { query: { project: id } })); }
-async function putProject(client, id, project, force = false) {
-  return client.request("PUT", "/api/project", { query: { project: id, force: force ? "1" : undefined }, json: project });
-}
-async function patchProject(client, id, ops) {
-  let last;
-  for (let attempt = 0; attempt < 3; attempt++) {
-    const updated = applyOps(await getProject(client, id), ops);
-    try { await putProject(client, id, updated.project); return updated; }
-    catch (error) { if (error.status !== 409) throw error; last = error; }
-  }
-  throw new CliError("Project kept changing; three conflict retries failed: " + last.message);
-}
-
 const DEFAULT_PROPS = { x:0,y:0,scale:1,rotation:0,opacity:1,volume:1,speed:1,blend:"normal",fit:"contain",cropL:0,cropR:0,cropT:0,cropB:0,cornerRadius:0,flipH:false,flipV:false,filterPreset:"none",brightness:100,contrast:100,saturation:100,hue:0,temperature:0,tint:0,blur:0,grayscale:0,sepia:0,invert:0,vignette:0,shake:0,shakeSpeed:8,rgbSplit:0,grain:0,chromaKey:"",chromaTolerance:26,chromaSoftness:12,bgRemove:false,text:"Title",fontSize:72,color:"#ffffff",color2:"",font:"Segoe UI",bold:true,weight:0,italic:false,uppercase:false,align:"center",letterSpacing:0,lineHeight:1.2,textShadow:12,glow:0,glowColor:"",strokeWidth:0,strokeColor:"#000",bgColor:"#000",bgOpacity:0,textAnim:"none",wordRate:0.15 };
 function number(value) { return typeof value === "number" ? String(Math.round(value * 1000) / 1000) : String(value); }
 function compactProject(id, project) {
@@ -287,39 +244,6 @@ function findBrowser(explicit) {
   throw new CliError("Chrome/Chromium was not found; install it or pass --browser <path>");
 }
 
-function createAuthProxy(client) {
-  const upstreams = new Set();
-  const server = http.createServer((incoming, outgoing) => {
-    const target = new URL(client.base.href);
-    target.pathname = client.basePath + incoming.url.split("?")[0];
-    target.search = incoming.url.includes("?") ? incoming.url.slice(incoming.url.indexOf("?")) : "";
-    const headers = { ...incoming.headers, host: client.base.host };
-    if (client.token) headers.authorization = "Bearer " + client.token;
-    if (headers.origin) headers.origin = client.base.origin;
-    const transport = target.protocol === "https:" ? https : http;
-    const request = transport.request(target, { method: incoming.method, headers }, (response) => {
-      outgoing.writeHead(response.statusCode, response.headers); response.pipe(outgoing);
-    });
-    upstreams.add(request);
-    request.once("close", () => upstreams.delete(request));
-    request.on("error", (error) => { if (!outgoing.headersSent) outgoing.writeHead(502); outgoing.end(error.message); });
-    incoming.pipe(request);
-  });
-  return new Promise((resolve, reject) => {
-    server.once("error", reject);
-    server.listen(0, "127.0.0.1", () => resolve({
-      server,
-      port: server.address().port,
-      close() {
-        for (const request of upstreams) request.destroy();
-        if (server.closeAllConnections) server.closeAllConnections();
-        server.close();
-        server.unref();
-      },
-    }));
-  });
-}
-
 function delay(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
 async function download(client, src, target, force) {
   if (fs.existsSync(target) && !force) throw new CliError(`Output already exists: ${target} (pass --force to replace it)`);
@@ -346,9 +270,8 @@ async function exportProject(client, options) {
   if (fs.existsSync(output) && !options.force) throw new CliError(`Output already exists: ${output} (pass --force to replace it)`);
   const browserPath = findBrowser(options.browser === true ? undefined : options.browser);
   const requestId = require("crypto").randomBytes(16).toString("hex");
-  const proxy = await createAuthProxy(client);
   const profile = fs.mkdtempSync(path.join(os.tmpdir(), "tik-editvideo-cli-chrome-"));
-  const url = new URL(`http://127.0.0.1:${proxy.port}/`);
+  const url = new URL(client.base.href);
   url.searchParams.set("project", projectId);
   url.searchParams.set("cliExport", requestId);
   url.searchParams.set("cliExportName", name);
@@ -376,7 +299,6 @@ async function exportProject(client, options) {
     console.log(JSON.stringify({ ok: true, project: projectId, output, src: status.src }, null, 2));
   } finally {
     if (chrome.exitCode === null) chrome.kill();
-    proxy.close();
     const killTimer = setTimeout(() => chrome.kill("SIGKILL"), 3000);
     try { await closed; } finally { clearTimeout(killTimer); }
     fs.rmSync(profile, { recursive: true, force: true });
@@ -384,74 +306,111 @@ async function exportProject(client, options) {
 }
 
 function printHelp() {
-  console.log(`tik-editvideo-cli - FableCut server, editing, and export CLI
+  console.log(`tik-editvideo-cli - local editing, preview, and export
 
 Usage:
-  tik-editvideo-cli server start [--host 127.0.0.1] [--port 7777] [--data-dir <dir>]
   tik-editvideo-cli list-projects
   tik-editvideo-cli create-project --name <name> [--id <id>]
   tik-editvideo-cli get-project --project <id> [--compact]
   tik-editvideo-cli patch-project --project <id> --ops '<JSON array>'
   tik-editvideo-cli set-project --project <id> --document '<JSON object>' [--force]
   tik-editvideo-cli import-media --project <id> --path <file> [--asr-url <url>]
+  tik-editvideo-cli status [--project <id>] [--host <host>] [--port <port>]
+  tik-editvideo-cli server start [--host <host>] [--port <port>]
   tik-editvideo-cli export --project <id> [--name <name>] [--output <mp4>] [--force]
-                     [--browser <path>] [--timeout <seconds>]
+                     [--browser <path>] [--timeout <seconds>] [--host <host>] [--port <port>]
 
-Environment:
-  FABLECUT_URL       Server URL (default http://127.0.0.1:7777)
-  FABLECUT_TOKEN     Optional Bearer token for hosted servers
-  FABLECUT_DATA_DIR  Project/library storage (default ~/.tik-editvideo-cli)
-  CHROME_PATH        Chrome/Chromium executable used by 'export'`);
+Editing works without a server. status starts a background preview server if needed;
+export also starts it automatically. server start runs in the foreground.
+Storage is fixed at .tik-editvideo-cli inside the OS user home directory.
+HOST / PORT configure the local server (default 127.0.0.1:7777).
+CHROME_PATH selects Chrome/Chromium for export. Export also requires ffmpeg.`);
 }
 
 async function main(argv = process.argv.slice(2)) {
   const { positionals, options } = parseArgs(argv);
   const command = positionals[0];
   if (!command || command === "help" || options.help) { printHelp(); return; }
+  if (options["data-dir"] !== undefined) throw new CliError("--data-dir is no longer supported; storage is fixed at ~/.tik-editvideo-cli");
+  if (options.url !== undefined || process.env.FABLECUT_URL?.trim())
+    throw new CliError("Remote editing (--url / FABLECUT_URL) is no longer supported; unset FABLECUT_URL to use local projects");
+  const commands = ["server", "status", "list-projects", "create-project", "get-project", "patch-project", "set-project", "import-media", "export"];
+  if (!commands.includes(command)) throw new CliError("Unknown command: " + command + " (run tik-editvideo-cli --help)");
+  if (command === "server" && positionals[1] !== "start") throw new CliError("Use: tik-editvideo-cli server start");
+  const { initialize, ensureServer, connection } = require("./local");
+  for (const key of ["host", "port"]) if (options[key] !== undefined) requireOption(options, key);
+  const local = initialize(runtimeDir()), { store, paths } = local;
+  const print = value => console.log(JSON.stringify(value, null, 2));
   if (command === "server") {
-    if (positionals[1] !== "start") throw new CliError("Use: tik-editvideo-cli server start");
-    if (options.host) process.env.HOST = String(options.host);
-    if (options.port) process.env.PORT = String(options.port);
-    if (options["data-dir"]) process.env.FABLECUT_DATA_DIR = path.resolve(String(options["data-dir"]));
-    else if (!process.env.FABLECUT_DATA_DIR) process.env.FABLECUT_DATA_DIR = defaultDataDir();
-    require(path.join(runtimeDir(), "server.js"));
-    return;
-  }
-  const client = new Client(options.url === true ? undefined : options.url);
-  if (command === "list-projects") {
-    console.log(JSON.stringify(await client.request("GET", "/api/projects"), null, 2));
-  } else if (command === "create-project") {
-    const json = { name: requireOption(options, "name") }; if (options.id && options.id !== true) json.id = String(options.id);
-    console.log(JSON.stringify(await client.request("POST", "/api/projects", { json }), null, 2));
-  } else if (command === "get-project") {
-    const id = requireOption(options, "project"), project = await getProject(client, id);
+    const config = connection(options);
+    process.env.HOST = config.host;
+    process.env.PORT = String(config.port);
+    require(path.join(local.runtime, "server.js"));
+  } else if (command === "status") {
+    if (options.project !== undefined) requireOption(options, "project");
+    print(await ensureServer(local, options));
+  } else if (command === "list-projects") print(paths.listProjects());
+  else if (command === "create-project") print(store.create(requireOption(options, "name"), options.id === undefined ? undefined : requireOption(options, "id")));
+  else if (command === "get-project") {
+    const id = store.context(requireOption(options, "project")).id, project = requireProject(store.read(id));
     console.log(options.compact ? compactProject(id, project) : JSON.stringify(project, null, 2));
   } else if (command === "patch-project") {
-    const id = requireOption(options, "project");
-    const result = await patchProject(client, id, parseJSON(requireOption(options, "ops"), "--ops", "array"));
-    console.log(JSON.stringify({ ok:true, project:id, revision:result.project.revision, clips:result.project.clips.length, media:result.project.media.length, changes:result.notes }, null, 2));
+    const id = store.context(requireOption(options, "project")).id;
+    const ops = parseJSON(requireOption(options, "ops"), "--ops", "array");
+    let changes;
+    const project = store.update(id, current => {
+      const result = applyOps(current, ops);
+      validateDocument(result.project);
+      changes = result.notes;
+      return result.project;
+    });
+    print({ ok: true, project: id, revision: project.revision, clips: project.clips.length, media: project.media.length, changes });
   } else if (command === "set-project") {
-    const id = requireOption(options, "project");
-    const project = clone(requireProject(parseJSON(requireOption(options, "document"), "--document", "object")));
-    validateDocument(project); project.revision = Number(project.revision || 0) + 1;
-    const response = await putProject(client, id, project, !!options.force);
-    console.log(JSON.stringify({ ok:true, project:id, revision:project.revision, response }, null, 2));
+    const id = store.context(requireOption(options, "project")).id;
+    const project = requireProject(parseJSON(requireOption(options, "document"), "--document", "object"));
+    validateDocument(project);
+    const saved = store.update(id, current => {
+      if (!options.force && Number(project.revision || 0) !== Number(current.revision || 0)) {
+        throw new CliError("CONFLICT — stale revision; read the latest project and reapply your changes");
+      }
+      return { ...project, revision: Number(current.revision || 0) + 1 };
+    });
+    print({ ok: true, project: id, revision: saved.revision, response: { ok: true, revision: saved.revision } });
   } else if (command === "import-media") {
-    const id = requireOption(options, "project"), source = path.resolve(requireOption(options, "path"));
+    const id = store.context(requireOption(options, "project")).id, source = path.resolve(requireOption(options, "path"));
     const asrUrl = options["asr-url"] === undefined ? undefined : validateAsrUrl(requireOption(options, "asr-url"));
-    if (!fs.statSync(source, { throwIfNoEntry:false })?.isFile()) throw new CliError("Media file not found: " + source);
+    if (!fs.statSync(source, { throwIfNoEntry: false })?.isFile()) throw new CliError("Media file not found: " + source);
     const kind = KIND_BY_EXT.get(path.extname(source).toLowerCase());
     if (!kind) throw new CliError("Unsupported media extension: " + (path.extname(source) || "(none)"));
-    const uploaded = await client.request("POST", "/api/upload", { query:{ project:id, name:path.basename(source) }, file:source });
-    if (!uploaded.src) throw new CliError("Upload response did not contain src");
-    const media = { id:newId("m_"), name:decodeURIComponent(path.basename(uploaded.src)), kind, src:uploaded.src };
+    const pp = store.context(id);
+    const base = path.basename(source).replace(/[^\w.\- ()\[\]]+/g, "_").slice(0, 120) || "file";
+    const ext = path.extname(base), stem = path.basename(base, ext);
+    let target = path.join(pp.mediaDir, base), n = 1;
+    for (;;) {
+      try { fs.copyFileSync(source, target, fs.constants.COPYFILE_EXCL); break; }
+      catch (error) { if (error.code !== "EEXIST") throw error; target = path.join(pp.mediaDir, `${stem}_${n++}${ext}`); }
+    }
+    const media = { id: newId("m_"), name: path.basename(target), kind, src: `/projects/${id}/media/${encodeURIComponent(path.basename(target))}` };
     if (asrUrl !== undefined) media.asrUrl = asrUrl;
-    let result;
-    try { result = await patchProject(client, id, [{ op:"addMedia", media }]); }
-    catch (error) { throw new CliError(`File uploaded to ${uploaded.src}, but registration failed: ${error.message}`); }
-    console.log(JSON.stringify({ ok:true, project:id, revision:result.project.revision, media }, null, 2));
-  } else if (command === "export") await exportProject(client, options);
-  else throw new CliError("Unknown command: " + command + " (run tik-editvideo-cli --help)");
+    // Probe locally when available; editing never needs the browser to fill duration.
+    const probe = spawnSync("ffprobe", ["-v", "error", "-show_entries", "format=duration:stream=width,height", "-of", "json", target], { encoding: "utf8", timeout: 15000 });
+    if (probe.status === 0) {
+      try {
+        const info = JSON.parse(probe.stdout), duration = Number(info.format?.duration);
+        if (Number.isFinite(duration) && duration > 0) media.duration = duration;
+        const visual = info.streams?.find(stream => stream.width && stream.height);
+        if (visual) { media.width = visual.width; media.height = visual.height; }
+      } catch {}
+    }
+    let project;
+    try { project = store.update(id, current => applyOps(current, [{ op: "addMedia", media }]).project); }
+    catch (error) { fs.rmSync(target, { force: true }); throw error; }
+    print({ ok: true, project: id, revision: project.revision, media });
+  } else if (command === "export") {
+    requireOption(options, "project");
+    const status = await ensureServer(local, options);
+    await exportProject(new ExportClient(status.url), options);
+  }
 }
 
-module.exports = { main, applyOps, compactProject, Client };
+module.exports = { main, applyOps, compactProject };

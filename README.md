@@ -217,39 +217,47 @@ still need to be on your machine.
 
 ### Or install the command-line interface
 
-The standalone npm package starts the complete editor/API server, exposes the
-agent editing commands, and can drive the browser compositor headlessly to
-produce a final MP4:
+The standalone npm package edits local projects without an HTTP server and
+starts the browser editor only when a preview or export is needed:
 
 ```bash
 npm install -g tik-editvideo-cli
-tik-editvideo-cli server start
-tik-editvideo-cli get-project --project default --compact
-tik-editvideo-cli export --project default --output ./final.mp4
+tik-editvideo-cli create-project --name "My Edit" --id my-edit
+tik-editvideo-cli get-project --project my-edit --compact
+tik-editvideo-cli status --project my-edit
+# When the final video is requested:
+tik-editvideo-cli export --project my-edit --output ./final.mp4
 ```
 
-The package has no npm runtime dependencies. Headless export needs ffmpeg on
-the server and Chrome/Chromium on the CLI machine. Use `--browser <path>` or
-`CHROME_PATH` if the browser is not discovered automatically. The CLI server
-stores projects and shared library data under `~/.tik-editvideo-cli` by default and
-serves the editor from its own bundled runtime, so it does not depend on a
-FableCut source checkout. Override storage with `--data-dir` or
-`FABLECUT_DATA_DIR`. On first start after upgrading, an existing `~/.fablecut`
-is renamed to the new default if `~/.tik-editvideo-cli` does not yet exist;
+`list-projects`, `create-project`, `get-project`, `patch-project`, `set-project`,
+and `import-media` operate directly on local workspaces. Explicit project IDs
+keep parallel edits isolated. CLI, browser/API, and MCP project writes share
+per-project locks and atomic saves; stale full-document replacements are rejected.
+
+Storage is fixed at `.tik-editvideo-cli` inside the OS user home directory,
+resolved with Node's `os.homedir()` on Windows, macOS, and Linux. Typical paths
+are `C:\Users\<user>\.tik-editvideo-cli`, `/Users/<user>/.tik-editvideo-cli`, and
+`/home/<user>/.tik-editvideo-cli`. The CLI does not accept `--data-dir` and ignores
+`FABLECUT_DATA_DIR`; standalone server/MCP configuration is unchanged. On first
+use, an existing `~/.fablecut` is renamed if the new directory does not exist;
 neither directory is overwritten or merged.
 
-For an already-running remote deployment, set its URL and optional Bearer
-credential before using the same commands:
+`status` starts a background server if necessary and returns its URL; with
+`--project <id>` it returns `projectUrl` for that project. Repeated calls reuse
+the same server. An incompatible service or different data directory on the
+port produces an error. `GET /api/status` exposes the server identity, PID, and
+data directory for this check. `--host` / `--port` override `HOST` / `PORT`, with
+defaults `127.0.0.1:7777`. `server start` remains available for foreground use.
 
-```bash
-export FABLECUT_URL="https://fablecut.example.com"
-export FABLECUT_TOKEN="<token>"
-tik-editvideo-cli get-project --project my-edit --compact
-```
+Export automatically starts the local service and uses the same browser
+compositor as preview. It requires ffmpeg and Chrome/Chromium; use `--browser`
+or `CHROME_PATH` to select a browser. The package has no npm runtime dependencies
+and serves its bundled runtime independently of the source checkout.
+Remote editing via `--url` / `FABLECUT_URL` is no longer supported; unset old URL
+configuration before using the CLI. Bearer credentials are no longer used.
 
-The CLI provides `list-projects`, `create-project`, `get-project`,
-`patch-project`, `set-project`, `import-media`, and `export`. The remote gateway
-is responsible for validating the optional Bearer credential.
+The `tik-edit-video` skill delivers a preview link after verification and invites
+adjustments. It exports only on an explicit request, such as “导出最终视频”.
 
 Attach an existing speech transcript when importing footage:
 

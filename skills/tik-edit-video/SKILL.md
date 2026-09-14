@@ -23,7 +23,7 @@ fi
 
 - 剪辑和导出仅通过 `tik-editvideo-cli` 执行，不检查或修改其实现。
 - CLI 或自动安装命令返回非零退出码时，立即停止并向用户报告原始错误。不要调试或修复 CLI，不要改用 MCP、直接 HTTP 请求或其他方式绕过失败。
-- 连接远端服务时，按 `tik-editvideo-cli --help` 配置服务地址和鉴权，不打印凭据。本地默认地址为 `http://127.0.0.1:7777`。
+- 剪辑直接操作本地项目，无需启动 HTTP 服务；交付预览时通过 `status` 启动或复用服务。
 - 需要 schema、属性、时间语义或剪辑配方时，只读取 [剪辑参考](references/editing-guide.md) 中与当前任务相关的章节。
 
 ## CLI 命令
@@ -41,19 +41,21 @@ tik-editvideo-cli <命令> <参数>
 - `get-project`：读取项目时间线。
   - `--project <ID>`：必填，目标项目 ID。
   - `--compact`：可选，返回低 token 的素材和片段摘要；省略时返回完整项目 JSON。
-- `patch-project`：批量修改最新项目，发生 revision 冲突时由 CLI 自动重试。
+- `patch-project`：批量修改最新项目，同一项目的并发修改按顺序执行。
   - `--project <ID>`：必填，目标项目 ID。
   - `--ops '<JSON数组>'`：必填，按顺序执行的 patch 操作。
 - `set-project`：替换完整项目 JSON。
   - `--project <ID>`：必填，目标项目 ID。
   - `--document '<JSON对象>'`：必填，基于最近一次完整读取修改后的项目文档。
   - `--force`：可选，仅在用户明确要求丢弃并发修改时使用。
-- `import-media`：上传本地素材并注册到项目。
+- `import-media`：导入本地素材并注册到项目。
   - `--project <ID>`：必填，目标项目 ID。
   - `--path <绝对路径>`：必填，本地视频、音频、图片或 SVG 文件。
   - `--asr-url <URL>`：可选，原始素材完整 ASR JSON 的 HTTP(S) 地址，保存为 `media.asrUrl`，随工程交付供其他设备复用。
   - 返回可供片段引用的 `media` 对象。
-- `export`：用无头 Chrome/Chromium 调用与预览相同的浏览器合成器，导出最终 MP4。
+- `status`：检查本地 HTTP 服务，未启动时自动启动。
+  - `--project <ID>`：可选，指定时返回该项目的 `projectUrl`，用于交付预览。
+- `export`：自动启动所需服务，用无头 Chrome/Chromium 调用与预览相同的浏览器合成器，导出最终 MP4。
   - `--project <ID>`：必填，目标项目 ID。
   - `--output <路径>`：可选，本地输出文件；默认使用项目名。
   - `--name <名称>`：可选，服务端导出名称。
@@ -108,7 +110,15 @@ tik-editvideo-cli patch-project --project product-reel --ops '[
 
 ### 3. 验证并交付
 
-再次运行 `get-project --compact`，核对总时长、轨道、素材引用和片段边界；关键帧和转场需读取完整项目核对。提供实际服务地址加 `/?project=<项目ID>` 的预览链接；需要交付最终文件时运行：
+再次运行 `get-project --compact`，核对总时长、轨道、素材引用和片段边界；关键帧和转场需读取完整项目核对。验证后运行：
+
+```bash
+tik-editvideo-cli status --project product-reel
+```
+
+使用返回的 `projectUrl` 交付预览，默认不直接导出。简述剪辑结果，并提示：“可以继续提出调整，或回复‘导出最终视频’进行导出。”不展示与用户无关的内部细节。
+
+用户回复“导出最终视频”或已明确要求最终文件时，运行：
 
 ```bash
 tik-editvideo-cli export --project product-reel --output ./product-reel.mp4
@@ -121,5 +131,5 @@ tik-editvideo-cli export --project product-reel --output ./product-reel.mp4
 - 相关修改合并到一次 patch，避免多次往返和中间态。
 - 字幕与标题按用途选择字体，不要整条片重复同一种展示字体。
 - 交付前检查画幅、FPS、响度、字幕安全区、空隙和片尾音频淡出。
-- 最终导出需要服务端 PATH 中有 ffmpeg，并在 CLI 机器上安装 Chrome/Chromium；
+- 最终导出需要本机 PATH 中有 ffmpeg，并安装 Chrome/Chromium；
   CLI 会无头驱动浏览器合成器，不要另写 ffmpeg 时间线替代它。

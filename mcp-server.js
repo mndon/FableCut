@@ -14,6 +14,7 @@
 const fs = require("fs");
 const path = require("path");
 const http = require("http");
+const store = require("./project-store");
 const { spawn, spawnSync } = require("child_process");
 
 const {
@@ -39,13 +40,6 @@ function context(projectId) {
 function readProject(projectId) {
   const raw = fs.readFileSync(context(projectId).projectFile, "utf8").replace(new RegExp("^\\uFEFF"), "");
   return JSON.parse(raw);
-}
-function writeProject(doc, projectId) {
-  // atomic tmp+rename so the UI's file watcher never sees a half-written doc
-  const file = context(projectId).projectFile;
-  const tmp = file + ".mcp.tmp";
-  fs.writeFileSync(tmp, JSON.stringify(doc, null, 2));
-  fs.renameSync(tmp, file);
 }
 /* Optimistic concurrency: revision of project.json when this session last read
    the full document. If the file has moved past it by write time, someone else
@@ -203,10 +197,8 @@ async function callTool(name, args) {
     case "fablecut_create_project": {
       const name = String(args.name || "").trim();
       if (!name) throw new Error("name is required");
-      const stem = String(args.id || name).toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "") || "project";
-      let id = normalizeProjectId(stem.slice(0, 56)), n = 2;
-      while (fs.existsSync(projectPaths(id).dir)) id = normalizeProjectId(`${stem.slice(0, 56)}-${n++}`);
-      const pp = ensureProject(id, name);
+      const { id } = store.create(name, args.id);
+      const pp = context(id);
       selectedProjectId = id;
       return `Created and selected project "${name}" (${id}). Workspace: ${pp.dir}`;
     }
@@ -312,80 +304,81 @@ async function callTool(name, args) {
       const projectId = context(args.projectId).id;
       const ops = args.ops;
       if (!Array.isArray(ops) || !ops.length) throw new Error("`ops` must be a non-empty array");
-      const proj = readProject(projectId);
       const notes = [];
-      const mergeInto = (target, set) => {
-        for (const [k, v] of Object.entries(set || {})) {
-          if (v === null) delete target[k];
-          else if (k === "props" && target.props && typeof v === "object" && !Array.isArray(v)) {
-            for (const [pk, pv] of Object.entries(v)) {
-              if (pv === null) delete target.props[pk]; else target.props[pk] = pv;
+      const proj = store.update(projectId, proj => {
+        const mergeInto = (target, set) => {
+          for (const [k, v] of Object.entries(set || {})) {
+            if (v === null) delete target[k];
+            else if (k === "props" && target.props && typeof v === "object" && !Array.isArray(v)) {
+              for (const [pk, pv] of Object.entries(v)) {
+                if (pv === null) delete target.props[pk]; else target.props[pk] = pv;
+              }
+            } else target[k] = v;
+          }
+        };
+        for (const op of ops) {
+          switch (op.op) {
+            case "addClip": {
+              const c = op.clip;
+              if (!c || !c.track || typeof c.start !== "number" || typeof c.duration !== "number")
+                throw new Error("addClip needs clip{track, start, duration}");
+              c.id = c.id || "c_" + uid();
+              if (proj.clips.some((x) => x.id === c.id)) throw new Error("addClip: duplicate clip id " + c.id);
+              if (c.kind !== "text" && c.kind !== "adjust" && !proj.media.some((m) => m.id === c.mediaId))
+                throw new Error(`addClip: unknown mediaId ${c.mediaId}`);
+              proj.clips.push(c);
+              notes.push("+" + c.id);
+              break;
             }
-          } else target[k] = v;
-        }
-      };
-      for (const op of ops) {
-        switch (op.op) {
-          case "addClip": {
-            const c = op.clip;
-            if (!c || !c.track || typeof c.start !== "number" || typeof c.duration !== "number")
-              throw new Error("addClip needs clip{track, start, duration}");
-            c.id = c.id || "c_" + uid();
-            if (proj.clips.some((x) => x.id === c.id)) throw new Error("addClip: duplicate clip id " + c.id);
-            if (c.kind !== "text" && c.kind !== "adjust" && !proj.media.some((m) => m.id === c.mediaId))
-              throw new Error(`addClip: unknown mediaId ${c.mediaId}`);
-            proj.clips.push(c);
-            notes.push("+" + c.id);
-            break;
-          }
-          case "updateClip": {
-            const c = proj.clips.find((x) => x.id === op.id);
-            if (!c) throw new Error("updateClip: no clip " + op.id);
-            mergeInto(c, op.set);
-            notes.push("~" + op.id);
-            break;
-          }
-          case "removeClip": {
-            const n = proj.clips.length;
-            proj.clips = proj.clips.filter((x) => x.id !== op.id);
-            if (proj.clips.length === n) throw new Error("removeClip: no clip " + op.id);
-            notes.push("-" + op.id);
-            break;
-          }
-          case "addMedia": {
-            const m = op.media;
-            if (!m || !m.src || !m.kind) throw new Error("addMedia needs media{src, kind}");
-            m.id = m.id || "m_" + uid();
-            if (proj.media.some((x) => x.id === m.id)) throw new Error("addMedia: duplicate media id " + m.id);
-            m.name = m.name || path.basename(decodeURIComponent(m.src));
-            proj.media.push(m);
-            notes.push("+" + m.id);
-            break;
-          }
-          case "removeMedia": {
-            const used = proj.clips.find((c) => c.mediaId === op.id);
-            if (used) throw new Error(`removeMedia: media ${op.id} is used by clip ${used.id}`);
-            const n = proj.media.length;
-            proj.media = proj.media.filter((x) => x.id !== op.id);
-            if (proj.media.length === n) throw new Error("removeMedia: no media " + op.id);
-            notes.push("-" + op.id);
-            break;
-          }
-          case "setProject": {
-            const allowed = ["name", "width", "height", "fps", "background", "markers", "disabledTracks"];
-            for (const [k, v] of Object.entries(op.set || {})) {
-              if (!allowed.includes(k)) throw new Error(`setProject: '${k}' not settable (allowed: ${allowed.join(", ")})`);
-              if (v === null) delete proj[k]; else proj[k] = v;
+            case "updateClip": {
+              const c = proj.clips.find((x) => x.id === op.id);
+              if (!c) throw new Error("updateClip: no clip " + op.id);
+              mergeInto(c, op.set);
+              notes.push("~" + op.id);
+              break;
             }
-            notes.push("~project");
-            break;
+            case "removeClip": {
+              const n = proj.clips.length;
+              proj.clips = proj.clips.filter((x) => x.id !== op.id);
+              if (proj.clips.length === n) throw new Error("removeClip: no clip " + op.id);
+              notes.push("-" + op.id);
+              break;
+            }
+            case "addMedia": {
+              const m = op.media;
+              if (!m || !m.src || !m.kind) throw new Error("addMedia needs media{src, kind}");
+              m.id = m.id || "m_" + uid();
+              if (proj.media.some((x) => x.id === m.id)) throw new Error("addMedia: duplicate media id " + m.id);
+              m.name = m.name || path.basename(decodeURIComponent(m.src));
+              proj.media.push(m);
+              notes.push("+" + m.id);
+              break;
+            }
+            case "removeMedia": {
+              const used = proj.clips.find((c) => c.mediaId === op.id);
+              if (used) throw new Error(`removeMedia: media ${op.id} is used by clip ${used.id}`);
+              const n = proj.media.length;
+              proj.media = proj.media.filter((x) => x.id !== op.id);
+              if (proj.media.length === n) throw new Error("removeMedia: no media " + op.id);
+              notes.push("-" + op.id);
+              break;
+            }
+            case "setProject": {
+              const allowed = ["name", "width", "height", "fps", "background", "markers", "disabledTracks"];
+              for (const [k, v] of Object.entries(op.set || {})) {
+                if (!allowed.includes(k)) throw new Error(`setProject: '${k}' not settable (allowed: ${allowed.join(", ")})`);
+                if (v === null) delete proj[k]; else proj[k] = v;
+              }
+              notes.push("~project");
+              break;
+            }
+            default:
+              throw new Error("Unknown op: " + op.op + " (addClip|updateClip|removeClip|addMedia|removeMedia|setProject)");
           }
-          default:
-            throw new Error("Unknown op: " + op.op + " (addClip|updateClip|removeClip|addMedia|removeMedia|setProject)");
         }
-      }
-      proj.revision = (proj.revision || 0) + 1;
-      writeProject(proj, projectId);
+        proj.revision = (proj.revision || 0) + 1;
+        return proj;
+      });
       lastReadRevisions.set(projectId, proj.revision);
       return `Patched ${projectId} (revision ${proj.revision}): ${notes.join(" ")}. Now ${proj.clips.length} clip(s), ${proj.media.length} media. UI hot-reloaded.`;
     }
@@ -401,25 +394,26 @@ async function callTool(name, args) {
         if (c.kind !== "text" && c.kind !== "adjust" && !doc.media.some((m) => m.id === c.mediaId))
           throw new Error(`clip ${c.id} references unknown mediaId ${c.mediaId}`);
       }
-      let cur = { revision: 0 };
-      try { cur = readProject(projectId); } catch {}
-      const curRev = cur.revision || 0;
-      // strict check when this session read via the tool; otherwise fall back to
-      // the revision baked into the submitted doc (e.g. it was read as a file)
-      const lastReadRevision = lastReadRevisions.get(projectId);
-      const stale = lastReadRevision !== undefined
-        ? curRev !== lastReadRevision
-        : (doc.revision || 0) < curRev;
-      if (stale && !args.force) {
-        throw new Error(
-          `CONFLICT — not saved. project.json is at revision ${curRev}, but this edit was based on ` +
-          `revision ${lastReadRevision ?? (doc.revision || 0)}: the project changed in between ` +
-          `(the user probably tweaked something in the editor UI). ` +
-          `Call fablecut_get_project, re-apply your edit on top of the latest document, then save again. ` +
-          `Pass force:true only if the user explicitly wants those changes discarded.`);
-      }
-      doc.revision = Math.max(curRev + 1, (doc.revision || 0));
-      writeProject(doc, projectId);
+      const saved = store.update(projectId, cur => {
+        const curRev = cur.revision || 0;
+        // strict check when this session read via the tool; otherwise fall back to
+        // the revision baked into the submitted doc (e.g. it was read as a file)
+        const lastReadRevision = lastReadRevisions.get(projectId);
+        const stale = lastReadRevision !== undefined
+          ? curRev !== lastReadRevision
+          : (doc.revision || 0) < curRev;
+        if (stale && !args.force) {
+          throw new Error(
+            `CONFLICT — not saved. project.json is at revision ${curRev}, but this edit was based on ` +
+            `revision ${lastReadRevision ?? (doc.revision || 0)}: the project changed in between ` +
+            `(the user probably tweaked something in the editor UI). ` +
+            `Call fablecut_get_project, re-apply your edit on top of the latest document, then save again. ` +
+            `Pass force:true only if the user explicitly wants those changes discarded.`);
+        }
+        doc.revision = Math.max(curRev + 1, (doc.revision || 0));
+        return doc;
+      });
+      doc.revision = saved.revision;
       lastReadRevisions.set(projectId, doc.revision);
       return `Saved ${projectId} (revision ${doc.revision}). ${doc.clips.length} clip(s). The editor UI has hot-reloaded.`;
     }
@@ -459,11 +453,13 @@ async function callTool(name, args) {
           id: "m_" + uid(), name: bp.music.name, kind: "audio",
           src: bp.music.src, duration: bp.duration,
         };
-        const proj = readProject(projectId);
-        const wasCurrent = lastReadRevisions.get(projectId) === (proj.revision || 0);
-        proj.media.push(entry);
-        proj.revision = (proj.revision || 0) + 1;
-        writeProject(proj, projectId);
+        let wasCurrent;
+        const proj = store.update(projectId, proj => {
+          wasCurrent = lastReadRevisions.get(projectId) === (proj.revision || 0);
+          proj.media.push(entry);
+          proj.revision = (proj.revision || 0) + 1;
+          return proj;
+        });
         if (wasCurrent) lastReadRevisions.set(projectId, proj.revision);
         bp.music.mediaId = entry.id;
         musicNote = `Music extracted and registered as media "${entry.id}" — place it on A1 (in:0, duration:${bp.duration}).`;
@@ -490,8 +486,13 @@ async function callTool(name, args) {
       let target = path.join(pp.mediaDir, base);
       let i = 1;
       const stem = path.basename(base, ext);
-      while (fs.existsSync(target)) target = path.join(pp.mediaDir, `${stem}_${i++}${ext}`);
-      fs.copyFileSync(src, target);
+      for (;;) {
+        try { fs.copyFileSync(src, target, fs.constants.COPYFILE_EXCL); break; }
+        catch (error) {
+          if (error.code !== "EEXIST") throw error;
+          target = path.join(pp.mediaDir, `${stem}_${i++}${ext}`);
+        }
+      }
       const entry = {
         id: "m_" + uid(),
         name: path.basename(target),
@@ -499,14 +500,16 @@ async function callTool(name, args) {
         src: mediaSrc(projectId, path.basename(target)),
         duration: kind === "image" ? undefined : ffprobeDuration(target),
       };
-      const proj = readProject(projectId);
-      // import only appends a media entry (never touches clips), so it merges
-      // into the live document; keep lastReadRevision in step only if it
-      // already was — otherwise a later set_project must still re-read
-      const wasCurrent = lastReadRevisions.get(projectId) === (proj.revision || 0);
-      proj.media.push(entry);
-      proj.revision = (proj.revision || 0) + 1;
-      writeProject(proj, projectId);
+      let wasCurrent;
+      const proj = store.update(projectId, proj => {
+        // import only appends a media entry (never touches clips), so it merges
+        // into the live document; keep lastReadRevision in step only if it
+        // already was — otherwise a later set_project must still re-read
+        wasCurrent = lastReadRevisions.get(projectId) === (proj.revision || 0);
+        proj.media.push(entry);
+        proj.revision = (proj.revision || 0) + 1;
+        return proj;
+      });
       if (wasCurrent) lastReadRevisions.set(projectId, proj.revision);
       return `Imported into ${projectId} → ${JSON.stringify(entry)}\n` +
         (entry.duration == null && kind !== "image"

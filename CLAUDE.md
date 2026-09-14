@@ -102,22 +102,52 @@ Or install the standalone CLI (Node 18+, no npm runtime dependencies):
 
 ```bash
 npm install -g tik-editvideo-cli
-tik-editvideo-cli server start
+tik-editvideo-cli create-project --name "My Edit" --id my-edit
+tik-editvideo-cli get-project --project my-edit --compact
+tik-editvideo-cli status --project my-edit
 ```
 
-`tik-editvideo-cli server start` exposes the same editor and complete HTTP API as
-`node server.js`. It accepts `--host`, `--port`, and `--data-dir`. The CLI also
-provides `list-projects`, `create-project`, `get-project`, `patch-project`,
-`set-project`, and `import-media`; use `tik-editvideo-cli --help` for arguments.
-`import-media --asr-url <http(s)-url>` optionally attaches an existing ASR JSON
-result as `media.asrUrl`; `addMedia` accepts the same optional field. Compact
-CLI summaries mark these media with `asr=yes`; read the full project for URLs.
-It defaults to `http://127.0.0.1:7777`, or uses `FABLECUT_URL` and the optional
-`FABLECUT_TOKEN` Bearer credential for a hosted service. The CLI server stores
-data under `~/.tik-editvideo-cli` by default (override with `--data-dir` or
-`FABLECUT_DATA_DIR`) and serves its bundled runtime without reading files from
-the source checkout. On first start after upgrading, an existing `~/.fablecut`
-is renamed to the new default when `~/.tik-editvideo-cli` does not yet exist.
+The CLI edits local projects directly: `list-projects`, `create-project`,
+`get-project`, `patch-project`, `set-project`, and `import-media` work without an
+HTTP server. Always pass `--project <id>` to editing commands; separate CLI
+processes can edit independent projects simultaneously. CLI, HTTP, and MCP
+project writes share per-project locks and atomic replacement. Patches read and
+modify the latest document under the lock. CLI `set-project` takes the revision
+from the last full read, rejects stale documents, and increments it on save;
+`--force` deliberately replaces concurrent changes.
+
+CLI storage is fixed at `path.join(os.homedir(), ".tik-editvideo-cli")` on
+Windows, macOS, and Linux (typically `C:\Users\<user>\.tik-editvideo-cli`,
+`/Users/<user>/.tik-editvideo-cli`, or `/home/<user>/.tik-editvideo-cli`).
+`--data-dir` is unsupported; inherited `FABLECUT_DATA_DIR` does not affect the
+CLI or its server. Standalone `node server.js` and MCP retain their directory
+configuration described above. On first use, an existing `~/.fablecut` is renamed
+when the new directory does not yet exist; existing directories are never merged.
+The CLI serves its bundled runtime without reading source checkout files.
+
+`status [--project <id>]` checks the local HTTP server, starts it in the background
+if absent, waits for readiness, and returns JSON with `ok`, `started`, `pid`,
+`dataDir`, and `url`. With a project it also returns `projectId` and `projectUrl`.
+It reuses a server only when its identity and data directory match; an occupied
+port or another workspace is an error. `GET /api/status` reports the service
+identity (`service: "fablecut"`), `pid`, and actual `dataDir` for this check.
+Use `--host` / `--port` (or `HOST` / `PORT`) to configure the server; defaults are
+`127.0.0.1:7777`. `server start` still runs the editor/API server in the foreground.
+`export` automatically ensures the same local server is ready. Remote CLI editing
+via `--url` / `FABLECUT_URL` is no longer supported and produces a migration error;
+`FABLECUT_TOKEN` is no longer used by the CLI.
+
+`import-media` copies a local file into the project's media directory and
+registers it. When ffprobe is available it also records duration and dimensions;
+otherwise those fields may remain absent until the browser probes the file.
+`--asr-url <http(s)-url>` optionally attaches an existing ASR JSON result as
+`media.asrUrl`; `addMedia` accepts the same optional field. Compact summaries mark
+these media with `asr=yes`; read the full project for URLs.
+
+The `tik-edit-video` skill verifies the edit, runs `status --project <id>`, and
+hands over the returned preview link. It exports only when explicitly requested,
+including a reply of “导出最终视频”; otherwise it invites further adjustments.
+Use `tik-editvideo-cli --help` for command arguments.
 
 Files: `index.html` + `style.css` + `app.js` (editor UI), `server.js` (API + hosting),
 `projects/<id>/project.json` (timeline), `projects/<id>/media/` (project footage),
@@ -125,7 +155,7 @@ and `library/` (shared default asset library, see below).
 
 ## How Claude Code edits a video
 
-1. Ensure the server is running (background: `node server.js`, or `fablecut_status`).
+1. For CLI editing, work locally without a server and run `status` when ready to preview. For the browser/MCP workflow, start `node server.js` or call `fablecut_status`.
 2. Select/create a project and put sources in its `media/` (or import via the UI).
 3. Read its `project.json`, modify `media` / `clips`, **increment `revision`**, write it back.
 4. The browser UI (if open) reloads instantly. The user previews/exports from the UI.
@@ -603,7 +633,7 @@ Export can be started in the UI (Export button → dialog) or headlessly with
 renders each frame with the normal compositor — including SVG frames, keys and
 AI masks — streams JPEG frames + an offline WAV mix to the server, ffmpeg
 encodes a CRF-18 faststart MP4 into the project's `exports/`) and **Realtime**
-(MediaRecorder fallback). CLI export requires ffmpeg on the server and Chrome
-or Chromium on the CLI machine (override discovery with `--browser` or
+(MediaRecorder fallback). CLI export automatically starts the local server if needed and requires ffmpeg
+and Chrome or Chromium on the machine (override discovery with `--browser` or
 `CHROME_PATH`). It launches the editor headlessly and therefore uses the exact
 same compositor as preview instead of reimplementing the timeline in ffmpeg.

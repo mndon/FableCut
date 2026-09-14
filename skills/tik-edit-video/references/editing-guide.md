@@ -178,7 +178,7 @@
 - 一次性动画使用 `animation-fill-mode: both`，循环动画使用 `infinite`。
 - 自身中心旋转或缩放时设置 `transform-box: fill-box; transform-origin: center`。
 - 保持文件自包含，不引用外部资源。
-- 用 `import-media` 上传 SVG，再作为 `kind: "svg"` 的片段放到视频轨。
+- 用 `import-media` 导入 SVG，再作为 `kind: "svg"` 的片段放到视频轨。
 
 ## 常用配方
 
@@ -204,4 +204,4 @@
 - 检查对白、音乐和音效的相对响度，给音乐片尾添加淡出。
 - 检查字幕拼写、阅读速度、对比度、方向和安全区。
 - 检查关键帧时间均在片段 duration 内，转场长度合理。
-- 用 compact 时间线复核轨道、起点、时长和素材引用，再让用户在浏览器预览并导出。
+- 用 compact 时间线复核轨道、起点、时长和素材引用，再运行 `tik-editvideo-cli status --project <ID>`，交付返回的预览链接；用户明确要求后再导出。

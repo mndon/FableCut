@@ -19,6 +19,7 @@ const os = require("os");
 const { spawn, spawnSync, execFile } = require("child_process");
 
 const { analyze } = require("./analyze");
+const store = require("./project-store");
 
 const {
   APP_DIR, DATA_DIR, PROJECTS_DIR, LIBRARY_DIR, LIBRARY_SUBDIRS,
@@ -247,6 +248,11 @@ const server = http.createServer(async (req, res) => {
   // never serve dotfiles/dot-directories (.git, .gitignore, …)
   if (p.split(/[\\/]/).some((seg) => seg.startsWith("."))) { res.writeHead(403); res.end(); return; }
 
+  if (p === "/api/status" && req.method === "GET") {
+    sendJSON(res, 200, { service: "fablecut", pid: process.pid, dataDir: fs.realpathSync(DATA_DIR) });
+    return;
+  }
+
   /* API: project workspaces */
   if (p === "/api/projects" && req.method === "GET") {
     sendJSON(res, 200, listProjects());
@@ -256,10 +262,7 @@ const server = http.createServer(async (req, res) => {
     try {
       const body = JSON.parse((await readBody(req)).toString("utf8") || "{}");
       const name = String(body.name || "Untitled Project").trim() || "Untitled Project";
-      const stem = String(body.id || name).toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "") || "project";
-      let id = normalizeProjectId(stem.slice(0, 56)), n = 2;
-      while (fs.existsSync(projectPaths(id).dir)) id = normalizeProjectId(`${stem.slice(0, 56)}-${n++}`);
-      ensureProject(id, name);
+      const { id } = store.create(name, body.id);
       watchProject(id);
       broadcast(null, "projects");
       sendJSON(res, 201, { id, name });
@@ -282,21 +285,9 @@ const server = http.createServer(async (req, res) => {
       const pp = requestProject(url);
       const body = await readBody(req);
       const data = JSON.parse(body.toString("utf8")); // validate JSON
-      /* Optimistic concurrency: a write whose revision isn't newer than what's
-         on disk was based on a stale read (someone else — the UI or an external
-         tool — saved in between). Reject it instead of clobbering their work.
-         ?force=1 skips the check for deliberate overwrites. */
-      let cur = {};
-      try { cur = JSON.parse(fs.readFileSync(pp.projectFile, "utf8").replace(new RegExp("^\\uFEFF"), "")); } catch {}
-      if ((data.revision || 0) <= (cur.revision || 0) && url.searchParams.get("force") !== "1") {
-        sendJSON(res, 409, { error: "stale revision — project changed since it was read", revision: cur.revision || 0 });
-        return;
-      }
-      const tmp = pp.projectFile + ".tmp";
-      fs.writeFileSync(tmp, JSON.stringify(data, null, 2));
-      fs.renameSync(tmp, pp.projectFile);
-      sendJSON(res, 200, { ok: true, revision: data.revision });
-    } catch (e) { sendJSON(res, 400, { error: String(e) }); }
+      const saved = store.save(pp.id, data, url.searchParams.get("force") === "1");
+      sendJSON(res, 200, { ok: true, revision: saved.revision });
+    } catch (e) { sendJSON(res, e.status || 400, { error: String(e), revision: e.revision }); }
     return;
   }
 
@@ -344,9 +335,14 @@ const server = http.createServer(async (req, res) => {
       let target = path.join(pp.mediaDir, name);
       let i = 1;
       const ext = path.extname(name), base = path.basename(name, ext);
-      while (fs.existsSync(target)) target = path.join(pp.mediaDir, `${base}_${i++}${ext}`);
       const body = await readBody(req);
-      fs.writeFileSync(target, body);
+      for (;;) {
+        try { fs.writeFileSync(target, body, { flag: "wx" }); break; }
+        catch (error) {
+          if (error.code !== "EEXIST") throw error;
+          target = path.join(pp.mediaDir, `${base}_${i++}${ext}`);
+        }
+      }
       await faststart(target);
       sendJSON(res, 200, { ok: true, src: projectMediaSrc(pp.id, path.basename(target)) });
     } catch (e) { sendJSON(res, 500, { error: String(e) }); }
