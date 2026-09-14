@@ -298,6 +298,8 @@ function toggleTrackEnabled(id) {
 }
 const runtime = {
   clipEls: new Map(),   // clipId -> HTMLMediaElement
+  previewMedia: new Map(), // clipId -> preparation state (preview only)
+  previewWait: null,       // fixed candidate time while buffering
   clipGain: new Map(),  // clipId -> GainNode
   mediaAux: new Map(),  // mediaId -> {img?, thumb?, svgText?, svgAnimated?}
   audioBufs: new Map(), // mediaId -> Promise<AudioBuffer> (waveforms + export mix)
@@ -672,8 +674,8 @@ function applyProject(data) {
   // reset runtime playback elements so they rebuild against new data
   if (state.audioHold) setAudioHold(false);
   else stopAudioHoldNodes();
-  for (const el of runtime.clipEls.values()) { try { el.pause(); el.src = ""; } catch { } }
-  runtime.clipEls.clear(); runtime.clipGain.clear();
+  resetPreviewWait();
+  for (const id of [...runtime.clipEls.keys()]) releaseClipEl(id);
   els.preview.width = project.width; els.preview.height = project.height;
   syncAspectSel();
   syncFpsSel();
@@ -2656,6 +2658,7 @@ function startScrub(e) {
 els.ruler.addEventListener("pointerdown", startScrub);
 
 function setTime(t) {
+  resetPreviewWait(true);
   state.time = clamp(t, 0, Math.max(projDur(), 0));
   seekMediaWhilePaused();
   if (state.audioHold) scheduleAudioHoldRefresh();
@@ -3442,11 +3445,16 @@ function getClipEl(c) {
   return el;
 }
 function releaseClipEl(id) {
+  runtime.previewMedia.delete(id);
   const el = runtime.clipEls.get(id);
-  if (el) { try { el.pause(); el.src = ""; } catch { } runtime.clipEls.delete(id); }
+  if (el) {
+    try { el.pause(); el.removeAttribute("src"); el.load(); } catch { }
+    runtime.clipEls.delete(id);
+  }
   const g = runtime.clipGain.get(id);
   if (g) {
     try { g.disconnect(); } catch {}
+    if (g._fcSource) { try { g._fcSource.disconnect(); } catch {} }
     if (g._fcOut) { try { g._fcOut.disconnect(); } catch {} }
     if (g._fcSplit) { try { g._fcSplit.disconnect(); } catch {} }
     runtime.clipGain.delete(id);
@@ -3506,6 +3514,8 @@ function hookAudio(c, el) {
     const ctx = runtime.audio.ctx;
     const src = ctx.createMediaElementSource(el);
     const g = ctx.createGain();
+    g._fcSource = src;
+    g.gain.value = 0; // preloaded elements must never sound before activation
     const ch = c.props?.audioChannel;
     const { split, merge } = connectChannelIsolated(ctx, src, g, ch);
     if (split) {
@@ -3801,11 +3811,14 @@ function play() {
   } else if (state.time >= projDur() - 0.01) {
     state.time = 0;
   }
+  resetPreviewWait(true);
+  lastTs = null;
   state.playing = true;
   els.btnPlay.textContent = "⏸";
   els.btnPlay.classList.add("on");
 }
 function pause() {
+  resetPreviewWait();
   if (state.audioHold) setAudioHold(false);
   state.playing = false;
   els.btnPlay.textContent = "▶";
@@ -3909,6 +3922,7 @@ function setAudioHold(on) {
   on = !!on;
   if (on) {
     if (state.exporting || state.rendering) return;
+    resetPreviewWait();
     if (state.playing) {
       // Pause without going through pause() (that would clear hold).
       state.playing = false;
@@ -3946,40 +3960,100 @@ function stepPreviewRate(dir) { // clamp at the ends — for the J/L shortcuts
 
 function activeAt(c, t) { return t >= c.start && t < clipEnd(c); }
 
-function syncMedia() {
-  const t = state.time;
+// Preparation is polled by the animation loop: no seek callback can restart
+// playback after a scrub, pause, edit or project replacement.
+function resetPreviewWait(retry = false) {
+  if (retry) for (const prep of runtime.previewMedia.values()) prep.error = null;
+  if (runtime.previewWait) els.btnPlay.textContent = state.playing ? "⏸" : "▶";
+  runtime.previewWait = null;
+  els.btnPlay.title = "Play / Pause (Space)";
+}
+function silencePreviewMedia() {
+  for (const [id, el] of runtime.clipEls) {
+    if (!el.paused) el.pause();
+    const g = runtime.clipGain.get(id);
+    if (g) g.gain.value = 0;
+    else el.volume = 0;
+  }
+}
+function preparePreviewMedia(t) {
+  const keep = new Set(), waiting = [];
+  const horizon = 2 * playRate();
   for (const c of project.clips) {
-    if (c.kind === "text" || c.kind === "image" || c.kind === "svg" || c.kind === "adjust") continue;
-    const el = getClipEl(c); if (!el) continue;
-    const enabled = isTrackEnabled(c.track);
-    const mt = mediaTimeAt(c, t);
-    if (state.playing && enabled && activeAt(c, t)) {
-      // Only the active-under-playhead branch needs the full evaluated props
-      // (speed/volume incl. keyframes+transitions) — skip that work for every
-      // other clip on the timeline, which is the common case each frame.
-      const p = evalProps(c, t);
-      const sp = clamp(+p.speed || 1, 0.1, 8);
-      const eff = clamp(sp * playRate(), 0.0625, 16); // preview speed rides on top of clip speed
-      if (el.playbackRate !== eff) { try { el.playbackRate = eff; } catch {} }
-      if (el.paused) el.play().catch(() => {});
-      if (Math.abs(el.currentTime - mt) > 0.25 * eff) { try { el.currentTime = mt; } catch {} }
-      const vol = clamp(p.volume, 0, 4);
-      const g = runtime.clipGain.get(c.id);
-      if (g) g.gain.value = vol;
-      else el.volume = clamp(vol, 0, 1);
-    } else {
+    if ((c.kind !== "video" && c.kind !== "audio") || !isTrackEnabled(c.track)) continue;
+    const active = activeAt(c, t);
+    if (!active && !(c.start > t && c.start <= t + horizon)) continue;
+    keep.add(c.id);
+    const old = runtime.clipEls.get(c.id);
+    if (old && old.getAttribute("src") !== getMedia(c.mediaId)?.src) releaseClipEl(c.id);
+    const el = getClipEl(c);
+    if (!el) { if (active) waiting.push({ c, error: "missing media" }); continue; }
+    const key = JSON.stringify([getMedia(c.mediaId)?.src, c.start, c.in, c.duration,
+      c.props?.speed, c.keyframes?.speed]);
+    let prep = runtime.previewMedia.get(c.id);
+    if (!prep || prep.key !== key) {
+      prep = { key, target: null, ready: false, playPending: false, error: null };
+      runtime.previewMedia.set(c.id, prep);
+    }
+    // Inactive heads are positioned at their actual in point, not source zero.
+    const mt = mediaTimeAt(c, active ? t : c.start);
+    const speed = clamp(+evalProps(c, active ? t : c.start).speed || 1, 0.1, 8);
+    const eff = clamp(speed * playRate(), 0.0625, 16);
+    if (el.playbackRate !== eff) { try { el.playbackRate = eff; } catch {} }
+    if (!active) {
       if (!el.paused) el.pause();
       const g = runtime.clipGain.get(c.id);
       if (g) g.gain.value = 0;
-      // Paused preview: keep decode head on the frame under the playhead.
-      // Needed when clips move/trim without setTime (drag does not scrub time).
-      if (!state.playing && enabled && c.kind === "video" && activeAt(c, t) &&
-          Math.abs(el.currentTime - mt) > 0.04) {
-        try { el.currentTime = mt; } catch {}
+      else el.volume = 0;
+    }
+    if (el.error) prep.error = el.error.message || "media error " + el.error.code;
+    if (c.kind === "video" && el.readyState >= 1 && (!el.videoWidth || !el.videoHeight))
+      prep.error = "no decodable video track";
+    // Never chase a moving target while a seek is in flight. At entry (paused)
+    // use a tight tolerance; the wider drift threshold is only for playing media.
+    const tolerance = state.playing && !el.paused && prep.ready ? 0.25 * eff : 0.04;
+    if (el.readyState >= 1 && !el.seeking &&
+        (prep.target == null || Math.abs(el.currentTime - mt) > tolerance)) {
+      prep.target = mt;
+      prep.ready = false;
+      try { if (Math.abs(el.currentTime - mt) > 1e-4) el.currentTime = mt; }
+      catch (error) { prep.error = error.message; }
+    }
+    prep.ready = prep.target != null && !el.seeking && el.readyState >= 2 &&
+      Math.abs(el.currentTime - mt) <= tolerance && !prep.error;
+    if (active && !prep.ready) waiting.push({ c, error: prep.error });
+  }
+  for (const id of [...runtime.clipEls.keys()]) if (!keep.has(id)) releaseClipEl(id);
+  return waiting;
+}
+function syncMedia() {
+  const t = state.time;
+  for (const [id, el] of runtime.clipEls) {
+    const c = getClip(id);
+    const prep = runtime.previewMedia.get(id);
+    if (c && state.playing && isTrackEnabled(c.track) && activeAt(c, t) && prep?.ready) {
+      const p = evalProps(c, t);
+      const vol = clamp(p.volume, 0, 4);
+      const g = runtime.clipGain.get(id);
+      if (g) g.gain.value = vol;
+      else el.volume = clamp(vol, 0, 1);
+      if (el.paused && !prep.playPending) {
+        prep.playPending = true;
+        el.play().catch((error) => {
+          // pause()/release can intentionally abort a pending play request.
+          if (error.name !== "AbortError" && runtime.previewMedia.get(id) === prep)
+            prep.error = error.message || "playback failed";
+        }).finally(() => { prep.playPending = false; });
       }
+    } else {
+      if (!el.paused) el.pause();
+      const g = runtime.clipGain.get(id);
+      if (g) g.gain.value = 0;
+      else el.volume = 0;
     }
   }
 }
+
 function seekMediaWhilePaused() {
   if (state.playing) return;
   const t = state.time;
@@ -4684,7 +4758,7 @@ function drawClip(c, W, H, t) {
     if (src) { sw = src.naturalWidth || src.width; sh = src.naturalHeight || src.height; }
   } else if (c.kind === "video") {
     src = getClipEl(c);
-    if (src) { sw = src.videoWidth; sh = src.videoHeight; }
+    if (src && !src.seeking && src.readyState >= 2) { sw = src.videoWidth; sh = src.videoHeight; }
   }
   if (src && sw && sh) {
     // source crop (percent per edge)
@@ -5227,22 +5301,53 @@ function loop(ts) {
   // projDur() is an O(clips) scan — compute it once per tick and reuse below
   // instead of the 2-4 independent recomputations this loop used to trigger.
   const dur = projDur();
-  if (state.playing) {
-    state.time += dt * playRate();
+  let canDraw = true;
+  if (!state.rendering) { // fast export owns media seeking + the canvas
     const end = playStopAt(dur);
-    if (state.time >= end) {
-      state.time = end;
-      if (state.exporting) finishExport(true);
-      else pause();
+    if (runtime.previewWait && runtime.previewWait.anchor !== state.time) resetPreviewWait();
+    const candidate = runtime.previewWait?.t ?? (state.playing
+      ? Math.min(end, state.time + dt * playRate()) : state.time);
+    const waiting = preparePreviewMedia(candidate);
+    if (waiting.length && !state.exporting) {
+      canDraw = false; // retain the last complete composition, before clearing it
+      silencePreviewMedia();
+      const signature = JSON.stringify(project.clips
+        .filter((c) => (c.kind === "video" || c.kind === "audio") &&
+          isTrackEnabled(c.track) && activeAt(c, candidate))
+        .map((c) => [c.id, runtime.previewMedia.get(c.id)?.key]));
+      let wait = runtime.previewWait;
+      if (!wait || wait.signature !== signature || wait.t !== candidate)
+        wait = runtime.previewWait = { t: candidate, anchor: state.time, since: ts, signature };
+      if (!wait.reported && ts - wait.since >= 200) {
+        els.btnPlay.title = "Buffering…";
+        els.btnPlay.textContent = "⏳";
+      }
+      const failed = waiting.find((item) => item.error);
+      if (failed || ts - wait.since >= 15000) {
+        const { c, error } = failed || waiting[0];
+        // Report once; a new play or scrub explicitly retries preparation.
+        if (!wait.reported) {
+          pause();
+          wait.reported = true;
+          runtime.previewWait = wait;
+          toast(`Video preview: ${getMedia(c.mediaId)?.name || c.mediaId || c.id}: ${error || "loading timed out"}`);
+        }
+      }
+    } else {
+      resetPreviewWait();
+      state.time = candidate;
+      if (state.playing && state.time >= end) {
+        if (state.exporting) finishExport(true);
+        else pause();
+      }
+      syncMedia();
     }
-    // keep playhead visible
+    if (canDraw) drawFrame();
+  }
+  if (state.playing) {
     const px = state.time * state.pps, sc = els.timelineScroll;
     if (px < sc.scrollLeft || px > sc.scrollLeft + sc.clientWidth - 40)
       sc.scrollLeft = Math.max(0, px - 60);
-  }
-  if (!state.rendering) { // fast export owns media seeking + the canvas
-    syncMedia();
-    drawFrame();
   }
   if (state.dirtyTimeline) rebuildClips();
   els.playhead.style.left = state.time * state.pps + "px";
@@ -5497,8 +5602,9 @@ async function startExport() {
   await runtime.audio.ctx.resume();
   pause();
   state.time = 0;
+  resetPreviewWait(true);
   seekMediaWhilePaused();
-  await new Promise((r) => setTimeout(r, 350)); // let first frames decode
+  await new Promise((r) => setTimeout(r, 350)); // preview loop prewarms the opening window
   const stream = els.preview.captureStream(project.fps);
   for (const tr of runtime.audio.recDest.stream.getAudioTracks()) stream.addTrack(tr);
   recChunks = []; recDiscard = false;
@@ -5519,6 +5625,8 @@ async function startExport() {
   els.exportProgress.style.width = "0%";
   state.exporting = true;
   recorder.start(250);
+  resetPreviewWait(true);
+  lastTs = null;
   state.playing = true;
   els.btnPlay.textContent = "⏸";
   els.btnPlay.classList.add("on");
