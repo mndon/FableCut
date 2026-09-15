@@ -31,10 +31,10 @@ python3 "$SKILL_DIR/scripts/probe_video.py" "/绝对路径/素材.mp4" --out "$R
 python3 "$SKILL_DIR/scripts/probe_video.py" "/绝对路径/素材.mp4" --audio "$RUN_DIR/intermediate/s1/audio.mp3" --out "$RUN_DIR/intermediate/s1/audio_info.json"
 ```
 
-原点差>0.1秒、时长差>0.5秒失败。非均匀漂移不得用常数补偿；检查素材和提取步骤，不伪造时间戳。复核成功才转写，明确要求 JSON URL：
+原点差>0.1秒、时长差>0.5秒失败。非均匀漂移不得用常数补偿；检查素材和提取步骤，不伪造时间戳。复核成功后转写获取 JSON URL：
 
 ```bash
-python3 "$SKILL_DIR/../tik-audio-asr/scripts/transcribe.py" transcribe "$RUN_DIR/intermediate/s1/audio.mp3" --return-mode 1
+python3 "$SKILL_DIR/../tik-audio-asr/scripts/transcribe.py" transcribe "$RUN_DIR/intermediate/s1/audio.mp3"
 ```
 
 将返回的 `json_url` 保存为该 source 的 `asr_url`，再下载原始内容到 `transcript` 指定的 audio.json；不要把 URL 包装对象当成转写正文：
@@ -42,6 +42,8 @@ python3 "$SKILL_DIR/../tik-audio-asr/scripts/transcribe.py" transcribe "$RUN_DIR
 ```bash
 python3 "$SKILL_DIR/../tik-audio-asr/scripts/download_result.py" "$ASR_URL" --output "$RUN_DIR/intermediate/s1/audio.json"
 ```
+
+原始 JSON 使用 `rich_result` 和 `channel`。`rich_result` 为空或没有句子时停止选句，不自动重转。
 
 `ASR_URL` 使用真实返回地址。转写成功后清理临时音频；下载失败保留 URL 并报告，不重新转写。已有工程时，先从对应 `media.asrUrl` 取得地址并下载，跳过凭据检查、音频提取和转写；已有本地原始 JSON 则直接复用。
 
@@ -64,7 +66,7 @@ sources.json 的顶层为 sources 数组，每项例如：
 python3 "$SKILL_DIR/scripts/build_sentences.py" --sources "$RUN_DIR/intermediate/sources.json" --out "$RUN_DIR/intermediate"
 ```
 
-sentences.json 为 `{"sentences": [...]}`，每项含 index、source_id、raw_sentence_index、start/end、text、speaker/speaker_id、eligible、words。有可靠词时间才按标点拆短语，否则保留原句。--no-split 仅用户明确整句粒度时用。已有文件拒绝重建；筛声音只改 allowed_speakers，跨文件同名声音不合并。summary 的 ratio 是原句数量占比，不是发言时长占比。
+sentences.json 为 `{"sentences": [...]}`，每项含 index、source_id、raw_sentence_index、start/end、text、speaker/speaker_id、eligible、words。有可靠词时间才按标点拆短语，否则保留原句。--no-split 仅用户明确整句粒度时用。已有文件拒绝重建；筛声音只改 allowed_speakers，跨文件同名声音不合并。声音摘要沿用 `channel` 顺序，本地显示为“说话人1、说话人2……”；标签不代表真人身份，声音 ID 保持 `source_id:channel_id`。仅出现在词中的声音也保留在摘要中，原句数量为零。summary 的 ratio 是原句数量占比，不是发言时长占比。
 
 ## 商品与完整语义组
 

@@ -4,9 +4,13 @@ Split phrases by punctuation using reliable word timestamps. No timestamp interp
 """
 import argparse
 import re
+import sys
 from pathlib import Path
 
 from common import EPS, main_guard, number, read_json, unique_map, write_json
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tik-audio-asr" / "scripts"))
+from transcribe import ToolError, validate_channels
 
 PUNCT = "，。！？；、：…,.!?;:\n—-"
 PATTERN = re.compile(r"[^" + re.escape(PUNCT) + r"]+(?:[" + re.escape(PUNCT) + r"]+)?")
@@ -66,9 +70,13 @@ def build(sources, no_split=False):
         if not Path(source["path"]).is_absolute() or not Path(source["transcript"]).is_absolute():
             raise ValueError("Source and transcript paths must be absolute")
         raw = read_json(source["transcript"])
-        rich, speakers = raw["rich_result"], raw["speaker_mapping"]
-        if not isinstance(speakers, dict):
-            raise ValueError("speaker_mapping must be the original ASR object")
+        rich = raw["rich_result"]
+        try:
+            channels = validate_channels(raw.get("channel"), rich)
+        except ToolError as exc:
+            raise ValueError(exc.message) from exc
+        if rich is None:
+            raise ValueError(f"Empty ASR transcript: {sid}")
         total = number(rich["duration"], "ASR duration") / 1000
         lo, hi = source.get("range", [0, total])
         lo, hi = number(lo, "range.start"), number(hi, "range.end")
@@ -77,7 +85,11 @@ def build(sources, no_split=False):
         original = rich["sentences"]
         if not original:
             raise ValueError(f"Empty ASR transcript: {sid}")
-        buckets, previous = {}, -1
+        buckets = {f"{sid}:{cid}": {"speaker_id": f"{sid}:{cid}", "source_id": sid,
+                   "channel_id": str(cid), "label": f"说话人{index}",
+                   "sentence_count": 0, "samples": []}
+                   for index, cid in enumerate(channels, 1)}
+        previous = -1
         for raw_index, sentence in enumerate(original):
             start = number(sentence["begin_time"], "sentence.begin_time") / 1000
             end = number(sentence["end_time"], "sentence.end_time") / 1000
@@ -88,12 +100,9 @@ def build(sources, no_split=False):
             if not text:
                 raise ValueError(f"Empty ASR sentence text: {sid}:{raw_index}")
             cid = str(sentence["channel_id"])
-            if cid not in speakers:
-                raise ValueError(f"ASR speaker_mapping missing channel {cid}")
             speaker_id = f"{sid}:{cid}"
-            label = speakers[cid]
-            bucket = buckets.setdefault(speaker_id, {"speaker_id": speaker_id, "source_id": sid,
-                "channel_id": cid, "label": label, "sentence_count": 0, "samples": []})
+            bucket = buckets[speaker_id]
+            label = bucket["label"]
             bucket["sentence_count"] += 1
             if len(bucket["samples"]) < 5:
                 bucket["samples"].append(text[:80])

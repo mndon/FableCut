@@ -7,8 +7,11 @@ import argparse
 import hashlib
 import http.client
 import json
+import math
 import os
 import ssl
+import subprocess
+import tempfile
 import sys
 import time
 import wave
@@ -19,13 +22,14 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
 
-API_BASE_URL = "https://skgw-tik.tttci.com/open"
+API_BASE_URL = "http://127.0.0.1:8000/open"
 CLIENT_ID = "10104"
 SUCCESS_STATUS = 2000
 AUTH_FAILURE_STATUSES = {4010, 4011}
 POLL_INTERVAL_SECONDS = 3
 TIMEOUT_SECONDS = 30 * 60
 SUPPORTED_EXTENSIONS = {".mp3", ".wav", ".m4a", ".aac"}
+VIDEO_EXTENSIONS = {".mp4", ".mov", ".mkv", ".avi", ".webm", ".m4v", ".flv", ".ts", ".mts", ".m2ts", ".wmv"}
 
 
 class ToolError(Exception):
@@ -137,36 +141,37 @@ def read_aac_duration(path: Path) -> float:
 
 
 def read_mp3_duration(path: Path) -> float:
-    # 对 CBR 文件按首帧比特率计算；含 Xing/VBRI 头的 VBR 文件使用帧数计算。
-    data = path.read_bytes()
-    start = 10 + int.from_bytes(data[6:10], "big") if data[:3] == b"ID3" and len(data) >= 10 else 0
-    if start >= len(data):
-        raise ValueError("empty MP3")
-    for offset in range(start, len(data) - 4):
-        header = int.from_bytes(data[offset:offset + 4], "big")
-        if header >> 21 & 0x7FF != 0x7FF:
-            continue
-        version_bits, layer_bits = (header >> 19) & 0x03, (header >> 17) & 0x03
-        bitrate_index, sample_rate_index = (header >> 12) & 0x0F, (header >> 10) & 0x03
-        if version_bits == 1 or layer_bits != 1 or bitrate_index in {0, 15} or sample_rate_index == 3:
-            continue
-        version = {3: 1, 2: 2, 0: 25}[version_bits]
-        sample_rates = {1: (44100, 48000, 32000), 2: (22050, 24000, 16000), 25: (11025, 12000, 8000)}
-        bitrates = {1: (0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320), 2: (0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160)}
-        sample_rate, bitrate = sample_rates[version][sample_rate_index], bitrates[1 if version == 1 else 2][bitrate_index] * 1000
-        samples_per_frame = 1152 if version == 1 else 576
-        frame_size = (144 if version == 1 else 72) * bitrate // sample_rate + ((header >> 9) & 1)
-        xing_offset = offset + 4 + (32 if version == 1 and (header >> 6) & 3 == 3 else 17 if version != 1 and (header >> 6) & 3 == 3 else 0)
-        marker = data[xing_offset:xing_offset + 4]
-        if marker in {b"Xing", b"Info"} and xing_offset + 12 <= len(data) and read_u32(data, xing_offset + 4) & 1:
-            return read_u32(data, xing_offset + 8) * samples_per_frame / sample_rate
-        vbri_offset = offset + 36
-        if data[vbri_offset:vbri_offset + 4] == b"VBRI" and vbri_offset + 18 <= len(data):
-            return read_u32(data, vbri_offset + 14) * samples_per_frame / sample_rate
-        if frame_size <= 0:
-            raise ValueError("invalid MP3 frame size")
-        return (len(data) - offset) * 8 / bitrate
-    raise ValueError("MP3 frame not found")
+    try:
+        result = subprocess.run(
+            ["ffprobe", "-v", "error", "-select_streams", "a:0",
+             "-show_entries", "stream=codec_type:format=duration", "-of", "json", str(path)],
+            capture_output=True, text=True, check=True, timeout=60,
+        )
+    except FileNotFoundError as exc:
+        raise ToolError("DEPENDENCY_MISSING", "读取 MP3 时长需要安装 ffprobe") from exc
+    except (subprocess.SubprocessError, OSError) as exc:
+        raise ToolError("AUDIO_METADATA_INVALID", "无法读取有效的音频时长") from exc
+    metadata = json.loads(result.stdout)
+    if not metadata.get("streams"):
+        raise ValueError("no audio stream")
+    duration = float(metadata["format"]["duration"])
+    if not math.isfinite(duration) or duration <= 0:
+        raise ValueError("invalid duration")
+    return duration
+
+
+def extract_audio(video_path: Path, audio_path: Path) -> None:
+    try:
+        subprocess.run(
+            ["ffmpeg", "-nostdin", "-v", "error", "-y", "-i", str(video_path),
+             "-map", "0:a:0", "-vn", "-ac", "1", "-ar", "16000",
+             "-c:a", "libmp3lame", "-q:a", "4", str(audio_path)],
+            capture_output=True, check=True,
+        )
+    except FileNotFoundError as exc:
+        raise ToolError("DEPENDENCY_MISSING", "从视频提取音频需要安装 ffmpeg") from exc
+    except (subprocess.SubprocessError, OSError) as exc:
+        raise ToolError("AUDIO_EXTRACTION_FAILED", "音频提取失败，请确认视频可读取且包含音轨") from exc
 
 
 def read_duration(path: Path, extension: str) -> float:
@@ -195,8 +200,10 @@ def read_metadata(audio_path: str) -> AudioMetadata:
         raise ToolError("FILE_INVALID", "audio_path 必须指向非空音频文件")
     try:
         duration = read_duration(path, extension)
-        if duration <= 0:
+        if not math.isfinite(duration) or duration <= 0:
             raise ValueError("invalid duration")
+    except ToolError:
+        raise
     except Exception as exc:
         raise ToolError("AUDIO_METADATA_INVALID", "无法读取有效的音频时长") from exc
     return AudioMetadata(path, float(duration), stat.st_size, extension, calculate_md5(path))
@@ -301,6 +308,27 @@ def validate_rich_result(value: Any) -> dict[str, Any]:
     return value
 
 
+def validate_channels(value: Any, rich: dict[str, Any] | None) -> list[int]:
+    if not isinstance(value, list) or any(type(cid) is not int for cid in value) or len(set(value)) != len(value):
+        raise ToolError("INVALID_RESPONSE", "ASR 结果需要有效的 channel 数组，不支持旧格式")
+    if rich is not None:
+        for sentence in rich["sentences"]:
+            ids = [sentence["channel_id"], *(word["channel_id"] for word in sentence.get("words") or [])]
+            if any(type(cid) is not int or cid not in value for cid in ids):
+                raise ToolError("INVALID_RESPONSE", "channel 未包含句子或词中的声音 ID")
+    return value
+
+
+def validate_editor_result(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict) or "rich_result" not in value:
+        raise ToolError("INVALID_RESPONSE", "ASR 结果缺少 rich_result")
+    rich = value["rich_result"]
+    if rich is not None:
+        validate_rich_result(rich)
+    channels = validate_channels(value.get("channel"), rich)
+    return {"rich_result": rich, "channel": channels}
+
+
 def validate_json_url(value: Any) -> str:
     try:
         parsed = urlsplit(value) if isinstance(value, str) else None
@@ -313,9 +341,23 @@ def validate_json_url(value: Any) -> str:
     return value
 
 
-def transcribe(audio_path: str, return_mode: int = 0) -> dict[str, Any]:
-    if type(return_mode) is not int or return_mode not in (0, 1):
-        raise ToolError("ARGUMENT_INVALID", "return_mode 必须为 0 或 1")
+def transcribe(audio_path: str) -> dict[str, Any]:
+    path = Path(audio_path)
+    if not path.is_absolute():
+        raise ToolError("FILE_INVALID", "输入必须是本地音频或视频的绝对路径")
+    if path.suffix.lower() in VIDEO_EXTENSIONS:
+        if not path.is_file() or path.stat().st_size == 0:
+            raise ToolError("FILE_INVALID", "输入必须指向非空视频文件")
+        # Fail before extraction when credentials are missing.
+        load_config()
+        with tempfile.TemporaryDirectory(prefix="tik-audio-asr-") as directory:
+            extracted = Path(directory) / (path.stem + ".mp3")
+            extract_audio(path, extracted)
+            return transcribe_audio(str(extracted))
+    return transcribe_audio(audio_path)
+
+
+def transcribe_audio(audio_path: str) -> dict[str, Any]:
     metadata = read_metadata(audio_path)
     client = TikAiClient(load_config())
     task = client.api_request("/api/v2/toolExtract", "POST", {
@@ -328,7 +370,7 @@ def transcribe(audio_path: str, return_mode: int = 0) -> dict[str, Any]:
             "desktop_file_name": metadata.path.name,
         },
         "without_merge_word": True,
-        "return_mode": return_mode,
+        "for_editor": 1,
     })
     task_id = task.get("Id", task.get("id")) if isinstance(task, dict) else None
     if isinstance(task_id, bool) or not isinstance(task_id, int) or task_id <= 0:
@@ -356,12 +398,13 @@ def transcribe(audio_path: str, return_mode: int = 0) -> dict[str, Any]:
     while time.monotonic() < deadline:
         detail = client.api_request(f"/api/v2/toolExtract/{task_id}", "GET")
         status = detail.get("parse_status") if isinstance(detail, dict) else None
+        # Editor details use an empty URL while processing and omit parse_status.
+        if isinstance(detail, dict) and "parse_status" not in detail and "json_url" in detail:
+            if detail["json_url"] != "":
+                return {"json_url": validate_json_url(detail["json_url"])}
+            status = 2
         if status == 3:
-            if return_mode == 1:
-                return {"json_url": validate_json_url(detail.get("json_url"))}
-            rich_result = validate_rich_result(detail.get("rich_result"))
-            channels = sorted({sentence["channel_id"] for sentence in rich_result["sentences"]})
-            return {"rich_result": rich_result, "speaker_mapping": {str(channel): f"说话人{index}" for index, channel in enumerate(channels, 1)}}
+            return {"json_url": validate_json_url(detail.get("json_url"))}
         if status == 4:
             raise ToolError("NO_SPEECH", "音频中未检测到有效说话声")
         if status != 2:
@@ -374,12 +417,10 @@ def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
     command = sub.add_parser("transcribe")
-    command.add_argument("audio_path", help="Absolute audio path")
-    command.add_argument("--return-mode", type=int, choices=(0, 1), default=0,
-                         help="0: inline JSON (default); 1: JSON URL")
+    command.add_argument("audio_path", help="Absolute audio or video path")
     args = parser.parse_args(argv)
     try:
-        print(json.dumps(transcribe(args.audio_path, args.return_mode), ensure_ascii=False, separators=(",", ":")))
+        print(json.dumps(transcribe(args.audio_path), ensure_ascii=False, separators=(",", ":")))
         return 0
     except KeyboardInterrupt:
         print(json.dumps({"error": {"code": "CANCELLED", "message": "已取消音频转写"}}, ensure_ascii=False), file=sys.stderr)

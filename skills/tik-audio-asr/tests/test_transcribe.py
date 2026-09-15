@@ -4,6 +4,8 @@ import copy
 import io
 import json
 import os
+import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -19,14 +21,90 @@ from download_result import download_result
 RESULT = {"rich_result": {"duration": 1000, "sentences": [
     {"begin_time": 0, "end_time": 1000, "text": "你好。", "channel_id": 7,
      "words": [{"begin_time": 0, "end_time": 1000, "word": "你好", "punc": "。", "channel_id": 7}]}]},
-    "speaker_mapping": {"7": "说话人1"}}
+    "channel": [7]}
 RESULT_URL = "https://example.com/result.json?sig=a%2Bb&x=1"
+
+
+class MediaTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+
+    def test_missing_ffprobe_reports_dependency(self):
+        path = self.root / "audio.mp3"
+        path.write_bytes(b"audio")
+        with patch.object(asr.subprocess, "run", side_effect=FileNotFoundError):
+            with self.assertRaises(asr.ToolError) as error:
+                asr.read_metadata(str(path))
+        self.assertEqual(error.exception.code, "DEPENDENCY_MISSING")
+
+    def test_invalid_probe_duration_is_rejected(self):
+        path = self.root / "audio.mp3"
+        path.write_bytes(b"audio")
+        for duration in ("NaN", "inf", "0", "-1", "N/A"):
+            response = subprocess.CompletedProcess([], 0, json.dumps({
+                "streams": [{"codec_type": "audio"}], "format": {"duration": duration}}))
+            with self.subTest(duration=duration), patch.object(asr.subprocess, "run", return_value=response):
+                with self.assertRaises(asr.ToolError) as error:
+                    asr.read_metadata(str(path))
+                self.assertEqual(error.exception.code, "AUDIO_METADATA_INVALID")
+
+    @unittest.skipUnless(shutil.which("ffmpeg") and shutil.which("ffprobe"), "requires ffmpeg and ffprobe")
+    def test_real_video_extraction_and_mp3_duration(self):
+        video = self.root / "video with spaces.mp4"
+        subprocess.run(["ffmpeg", "-nostdin", "-v", "error", "-f", "lavfi", "-i",
+                        "color=size=16x16:rate=10", "-f", "lavfi", "-i",
+                        "sine=frequency=440:sample_rate=16000", "-t", "2",
+                        "-c:v", "mpeg4", "-c:a", "aac", str(video)], check=True)
+        audio = self.root / "audio.mp3"
+        asr.extract_audio(video, audio)
+        self.assertAlmostEqual(asr.read_metadata(str(audio)).duration_seconds, 2, delta=0.2)
+        self.assertTrue(video.exists())
+
+    def test_video_temp_cleanup_on_success_and_failure(self):
+        video = self.root / "video.MP4"
+        video.write_bytes(b"synthetic video")
+        for fail in (False, True):
+            extracted = []
+            def extract(source, target):
+                self.assertEqual(source, video)
+                target.write_bytes(b"synthetic audio")
+                extracted.append(target)
+            def transcribe(path):
+                self.assertTrue(Path(path).is_file())
+                if fail:
+                    raise asr.ToolError("API_FAILED", "synthetic error")
+                return {"json_url": RESULT_URL}
+            with self.subTest(fail=fail), patch.object(asr, "load_config", return_value="synthetic-key"), \
+                    patch.object(asr, "extract_audio", side_effect=extract), \
+                    patch.object(asr, "transcribe_audio", side_effect=transcribe):
+                if fail:
+                    with self.assertRaises(asr.ToolError):
+                        asr.transcribe(str(video))
+                else:
+                    self.assertEqual(asr.transcribe(str(video)), {"json_url": RESULT_URL})
+            self.assertFalse(extracted[0].parent.exists())
+            self.assertEqual(video.read_bytes(), b"synthetic video")
+
+    def test_extraction_errors_do_not_start_transcription(self):
+        video = self.root / "video.mp4"
+        video.write_bytes(b"invalid video")
+        for exc, code in ((FileNotFoundError(), "DEPENDENCY_MISSING"),
+                          (subprocess.CalledProcessError(1, "ffmpeg"), "AUDIO_EXTRACTION_FAILED")):
+            with self.subTest(code=code), patch.object(asr, "load_config", return_value="synthetic-key"), \
+                    patch.object(asr.subprocess, "run", side_effect=exc), \
+                    patch.object(asr, "transcribe_audio") as transcribe:
+                with self.assertRaises(asr.ToolError) as error:
+                    asr.transcribe(str(video))
+                self.assertEqual(error.exception.code, code)
+                transcribe.assert_not_called()
 
 
 class TranscribeTests(unittest.TestCase):
     def setUp(self):
         self.requests = []
-        self.detail = {"parse_status": 3, "rich_result": RESULT["rich_result"]}
+        self.detail = {"parse_status": 3, **copy.deepcopy(RESULT)}
         self.client = self.enterContext(patch.object(asr, "TikAiClient")).return_value
         self.client.api_request.side_effect = self.api_request
         self.enterContext(patch.object(asr, "load_config", return_value="synthetic-test-key"))
@@ -43,46 +121,84 @@ class TranscribeTests(unittest.TestCase):
             return self.detail
         return {}
 
-    def test_default_and_explicit_modes_ignore_legacy_environment(self):
-        for mode in (None, 0, 1):
-            with self.subTest(mode=mode), patch.dict(os.environ, {"TIK_AUDIO_ASR_RETURN_MODE": "1" if mode != 1 else "0"}):
+    def test_editor_request_uses_integer_and_returns_url(self):
+        for detail in ({"json_url": RESULT_URL}, {"parse_status": 3, "json_url": RESULT_URL}):
+            with self.subTest(detail=detail), patch.dict(os.environ, {"TIK_AUDIO_ASR_RETURN_MODE": "0"}):
                 self.requests.clear()
-                self.detail = {"parse_status": 3, **({"json_url": RESULT_URL} if mode == 1 else
-                                                    {"rich_result": copy.deepcopy(RESULT["rich_result"])})}
-                result = asr.transcribe("/synthetic.wav") if mode is None else asr.transcribe("/synthetic.wav", mode)
-                self.assertEqual(self.requests[0][2]["return_mode"], mode or 0)
-                self.assertEqual(result, {"json_url": RESULT_URL} if mode == 1 else RESULT)
+                self.detail = detail
+                self.assertEqual(asr.transcribe("/synthetic.wav"), {"json_url": RESULT_URL})
+                payload = self.requests[0][2]
+                self.assertEqual(payload["for_editor"], 1)
+                self.assertIs(type(payload["for_editor"]), int)
+                self.assertNotIn("return_mode", payload)
 
-    def test_url_mode_rejects_missing_or_invalid_url(self):
-        for url in (None, "", "/result.json", "file:///tmp/a.json", "https://", "https://x:bad/a", 123):
-            with self.subTest(url=url):
-                self.detail = {"parse_status": 3, "json_url": url}
+    def test_invalid_url_and_unexpected_detail_fail(self):
+        for detail in ({}, RESULT, {"rich_result": None, "channel": []},
+                       *({"json_url": url} for url in (None, "/result.json", "file:///tmp/a", "https://", 123)),
+                       {"parse_status": 3}, {"parse_status": 3, "json_url": ""}):
+            with self.subTest(detail=detail):
+                self.detail = detail
                 with self.assertRaises(asr.ToolError) as error:
-                    asr.transcribe("/synthetic.wav", 1)
+                    asr.transcribe("/synthetic.wav")
                 self.assertEqual(error.exception.code, "INVALID_RESPONSE")
 
-    def test_main_emits_one_json_and_rejects_invalid_arguments_before_network(self):
-        self.detail = {"parse_status": 3, "json_url": RESULT_URL}
+    def test_processing_response_polls_until_url_result(self):
+        for detail in ({"parse_status": 2}, {"json_url": ""}):
+            with self.subTest(detail=detail):
+                self.detail = detail
+                def complete(_):
+                    self.detail = {"json_url": RESULT_URL}
+                with patch.object(asr.time, "sleep", side_effect=complete) as sleep:
+                    self.assertEqual(asr.transcribe("/synthetic.wav"), {"json_url": RESULT_URL})
+                sleep.assert_called_once_with(asr.POLL_INTERVAL_SECONDS)
+
+    def test_explicit_failure_and_timeout(self):
+        self.detail = {"parse_status": 4, "json_url": RESULT_URL}
+        with self.assertRaises(asr.ToolError) as error:
+            asr.transcribe("/synthetic.wav")
+        self.assertEqual(error.exception.code, "NO_SPEECH")
+        for detail in ({"parse_status": 2}, {"json_url": ""}):
+            with self.subTest(detail=detail):
+                self.detail = detail
+                with patch.object(asr.time, "monotonic", side_effect=[0, 0, asr.TIMEOUT_SECONDS]), \
+                        patch.object(asr.time, "sleep"):
+                    with self.assertRaises(asr.ToolError) as error:
+                        asr.transcribe("/synthetic.wav")
+                self.assertEqual(error.exception.code, "TIMEOUT")
+
+    def test_main_emits_url_and_rejects_removed_option(self):
+        self.detail = {"json_url": RESULT_URL}
         stdout = io.StringIO()
         with contextlib.redirect_stdout(stdout):
-            self.assertEqual(asr.main(["transcribe", "/synthetic.wav", "--return-mode", "1"]), 0)
+            self.assertEqual(asr.main(["transcribe", "/synthetic.wav"]), 0)
         self.assertEqual(json.loads(stdout.getvalue()), {"json_url": RESULT_URL})
-        for suffix in (["--return-mode", "2"], ["--return-mode"], ["--return-mode", "abc"]):
-            self.requests.clear()
-            with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as error:
-                asr.main(["transcribe", "/synthetic.wav", *suffix])
-            self.assertEqual(error.exception.code, 2)
-            self.assertEqual(self.requests, [])
+        self.assertEqual(len(stdout.getvalue().splitlines()), 1)
+        self.requests.clear()
+        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+            asr.main(["transcribe", "/synthetic.wav", "--return-mode", "1"])
+        self.assertEqual(self.requests, [])
 
-    def test_no_speech_and_invalid_inline_result_remain_errors(self):
-        for mode in (0, 1):
-            self.detail = {"parse_status": 4}
-            with self.assertRaises(asr.ToolError) as error:
-                asr.transcribe("/synthetic.wav", mode)
-            self.assertEqual(error.exception.code, "NO_SPEECH")
-        self.detail = {"parse_status": 3, "json_url": RESULT_URL}
+
+class EditorResultTests(unittest.TestCase):
+    def test_channels_and_null_preserved(self):
+        result = copy.deepcopy(RESULT)
+        result["rich_result"]["sentences"][0]["words"][0]["channel_id"] = 2
+        result["channel"] = [7, 2]
+        for payload in (result, {"rich_result": None, "channel": []}):
+            before = copy.deepcopy(payload)
+            self.assertEqual(asr.validate_editor_result(payload), before)
+            self.assertEqual(payload, before)
+
+    def test_invalid_channels_and_legacy_result_rejected(self):
+        for channels in (None, {}, [True], ["7"], [7, 7], []):
+            with self.subTest(channels=channels), self.assertRaises(asr.ToolError):
+                asr.validate_editor_result({**RESULT, "channel": channels})
         with self.assertRaises(asr.ToolError):
-            asr.transcribe("/synthetic.wav", 0)
+            asr.validate_editor_result({"rich_result": RESULT["rich_result"], "speaker_mapping": {"7": "说话人1"}})
+        result = copy.deepcopy(RESULT)
+        result["rich_result"]["sentences"][0]["words"][0]["channel_id"] = 2
+        with self.assertRaises(asr.ToolError):
+            asr.validate_editor_result(result)
 
 
 class DownloadTests(unittest.TestCase):
@@ -110,6 +226,17 @@ class DownloadTests(unittest.TestCase):
                 with self.assertRaises(asr.ToolError):
                     download_result(RESULT_URL, self.output)
                 self.assertFalse(self.output.exists())
+
+    def test_download_preserves_null_and_unsorted_channels(self):
+        result = copy.deepcopy(RESULT)
+        result["rich_result"]["sentences"][0]["words"][0]["channel_id"] = 2
+        result["channel"] = [7, 2]
+        for index, payload in enumerate((result, {"rich_result": None, "channel": []})):
+            raw = json.dumps(payload, indent=2).encode() + b"\n"
+            target = self.output.with_name(f"result-{index}.json")
+            with patch("download_result.urlopen", return_value=io.BytesIO(raw)):
+                download_result(RESULT_URL, target)
+            self.assertEqual(target.read_bytes(), raw)
 
     def test_expired_url_reports_download_failure_without_output(self):
         with patch("download_result.urlopen", side_effect=HTTPError(RESULT_URL, 403, "Expired", {}, None)):

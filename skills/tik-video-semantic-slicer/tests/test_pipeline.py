@@ -94,9 +94,9 @@ class BridgeTests(unittest.TestCase):
     def source(self, sid="s1", words=True):
         raw = {"rich_result": {"duration": 5000, "sentences": [
             {"begin_time": 1000, "end_time": 3000, "text": "面料，舒服。", "channel_id": 0,
-             "words": [{"begin_time": 1000, "end_time": 1900, "word": "面料", "punc": "，"},
-                       {"begin_time": 2100, "end_time": 3000, "word": "舒服", "punc": "。"}] if words else []}]},
-             "speaker_mapping": {"0": "说话人1"}}
+             "words": [{"begin_time": 1000, "end_time": 1900, "word": "面料", "punc": "，", "channel_id": 0},
+                       {"begin_time": 2100, "end_time": 3000, "word": "舒服", "punc": "。", "channel_id": 0}] if words else []}]},
+             "channel": [0]}
         path = self.root / (sid + ".json")
         write_json(path, raw)
         return {"id": sid, "path": str(self.root / (sid + ".mp4")), "transcript": str(path)}
@@ -147,6 +147,36 @@ class BridgeTests(unittest.TestCase):
         self.assertEqual(requests, [None])
         source.update(transcript=str(other), asr_url=project["media"][0]["asrUrl"])
         self.assertEqual(transcribe_bridge({"sources": [source]}), expected)
+
+    def test_channel_order_and_word_only_speaker(self):
+        source = self.source()
+        raw = read_json(source["transcript"])
+        raw["channel"] = [7, 2]
+        sentence = raw["rich_result"]["sentences"][0]
+        sentence["channel_id"] = 7
+        for word in sentence["words"]:
+            word["channel_id"] = 2
+        write_json(source["transcript"], raw)
+        before = Path(source["transcript"]).read_bytes()
+        data, summary = transcribe_bridge({"sources": [source]})
+        self.assertEqual([s["speaker_id"] for s in summary["speakers"]], ["s1:7", "s1:2"])
+        self.assertEqual([s["label"] for s in summary["speakers"]], ["说话人1", "说话人2"])
+        self.assertEqual(summary["speakers"][1]["sentence_count"], 0)
+        self.assertEqual(summary["speakers"][1]["ratio"], 0)
+        self.assertEqual(data["sentences"][0]["speaker_id"], "s1:7")
+        self.assertEqual(Path(source["transcript"]).read_bytes(), before)
+
+    def test_null_and_legacy_results_fail_without_rewriting_source(self):
+        source = self.source()
+        original = read_json(source["transcript"])
+        for raw in ({"rich_result": None, "channel": []},
+                    {"rich_result": original["rich_result"], "speaker_mapping": {"0": "说话人1"}},
+                    {"rich_result": original["rich_result"], "channel": []}):
+            write_json(source["transcript"], raw)
+            before = Path(source["transcript"]).read_bytes()
+            with self.subTest(raw=raw), self.assertRaises(ValueError):
+                transcribe_bridge({"sources": [source]})
+            self.assertEqual(Path(source["transcript"]).read_bytes(), before)
 
     def test_binding_requires_matching_asr_url_when_recorded(self):
         for actual in (None, "https://example.com/wrong.json", "https://example.com/s1.json"):

@@ -8,7 +8,7 @@ from pathlib import Path
 from urllib.error import URLError
 from urllib.request import urlopen
 
-from transcribe import ToolError, validate_json_url, validate_rich_result
+from transcribe import ToolError, validate_json_url, validate_editor_result
 
 
 def download_result(url, output):
@@ -23,15 +23,9 @@ def download_result(url, output):
         raise ToolError("DOWNLOAD_FAILED", "ASR JSON 下载失败，请检查链接是否可访问") from exc
     try:
         data = json.loads(body)
-        if not isinstance(data, dict):
-            raise ValueError("invalid result")
-        rich = validate_rich_result(data.get("rich_result"))
-        speakers = data.get("speaker_mapping")
-        if (not isinstance(speakers, dict) or not all(isinstance(v, str) for v in speakers.values())
-                or any(str(s["channel_id"]) not in speakers for s in rich["sentences"])):
-            raise ValueError("invalid speaker mapping")
+        validate_editor_result(data)
     except (ValueError, UnicodeDecodeError) as exc:
-        raise ToolError("INVALID_RESPONSE", "ASR JSON 内容无效或缺少 speaker_mapping") from exc
+        raise ToolError("INVALID_RESPONSE", "ASR JSON 内容无效") from exc
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("xb") as target:
         target.write(body)
