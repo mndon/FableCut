@@ -283,7 +283,7 @@ Examples in `library/svg/`: `sparkles.svg` (loop), `lower-third.svg`,
 ```
 
 `media.asrUrl` is an optional absolute HTTP(S) URL to the complete original-source
-ASR JSON (`rich_result` and `speaker_mapping`, timestamps in source milliseconds).
+ASR JSON (`rich_result` and `channel`, timestamps in source milliseconds).
 It is preserved by CLI project reads/writes and browser saves, so another device
 can download and reuse the transcript without running ASR again. Trims and speed
 changes do not alter it. The CLI stores the URL without fetching it; availability

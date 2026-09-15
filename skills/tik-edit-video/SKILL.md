@@ -91,7 +91,7 @@ tik-editvideo-cli get-project --project product-reel --compact
 
 先读取紧凑时间线，确认素材、片段 ID、轨道和时长。逐个运行 `import-media` 导入本地素材，记录返回的 `media.id`。
 
-已有 ASR URL 时随导入传入 `--asr-url`。需要转写内容时，先读取完整工程中的对应 `media.asrUrl` 并下载复用；紧凑摘要的 `asr=yes` 仅提示结果存在。链接内容包含 `rich_result` 和 `speaker_mapping`，时间戳基于原始素材、单位毫秒。下载失败时报告，不自动重复转写。
+已有 ASR URL 时随导入传入 `--asr-url`。需要转写内容时，先读取完整工程中的对应 `media.asrUrl` 并下载复用；紧凑摘要的 `asr=yes` 仅提示结果存在。链接内容包含 `rich_result` 和 `channel`，时间戳基于原始素材、单位毫秒。下载失败时报告，不自动重复转写。
 
 ```bash
 tik-editvideo-cli import-media --project product-reel --path /absolute/path/intro.mp4 --asr-url "https://example.com/intro-asr.json"

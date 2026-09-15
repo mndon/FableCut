@@ -122,20 +122,25 @@ class TranscribeTests(unittest.TestCase):
         return {}
 
     def test_editor_request_uses_integer_and_returns_url(self):
-        for detail in ({"json_url": RESULT_URL}, {"parse_status": 3, "json_url": RESULT_URL}):
+        for detail in ({"parse_status": 3, "result_url": RESULT_URL},
+                       {"id": 1, "parse_status": 3, "result_url": RESULT_URL, "title": "synthetic.wav"}):
             with self.subTest(detail=detail), patch.dict(os.environ, {"TIK_AUDIO_ASR_RETURN_MODE": "0"}):
                 self.requests.clear()
                 self.detail = detail
                 self.assertEqual(asr.transcribe("/synthetic.wav"), {"json_url": RESULT_URL})
-                payload = self.requests[0][2]
+                self.assertNotIn("for_editor", self.requests[0][2])
+                self.assertTrue(self.requests[0][2]["without_merge_word"])
+                payload = next(body for path, method, body in self.requests if path.endswith("/audioTask"))
+                self.assertTrue(payload["split"])
                 self.assertEqual(payload["for_editor"], 1)
                 self.assertIs(type(payload["for_editor"]), int)
                 self.assertNotIn("return_mode", payload)
 
     def test_invalid_url_and_unexpected_detail_fail(self):
         for detail in ({}, RESULT, {"rich_result": None, "channel": []},
-                       *({"json_url": url} for url in (None, "/result.json", "file:///tmp/a", "https://", 123)),
-                       {"parse_status": 3}, {"parse_status": 3, "json_url": ""}):
+                       *({"parse_status": 3, "result_url": url} for url in (None, "", "/result.json", "file:///tmp/a", "https://", 123)),
+                       {"parse_status": 3}, {"parse_status": 3, "json_url": RESULT_URL},
+                       {"result_url": RESULT_URL}, {"parse_status": 0}, {"parse_status": True}):
             with self.subTest(detail=detail):
                 self.detail = detail
                 with self.assertRaises(asr.ToolError) as error:
@@ -143,21 +148,21 @@ class TranscribeTests(unittest.TestCase):
                 self.assertEqual(error.exception.code, "INVALID_RESPONSE")
 
     def test_processing_response_polls_until_url_result(self):
-        for detail in ({"parse_status": 2}, {"json_url": ""}):
+        for detail in ({"parse_status": 1, "result_url": ""}, {"parse_status": 2, "result_url": ""}):
             with self.subTest(detail=detail):
                 self.detail = detail
                 def complete(_):
-                    self.detail = {"json_url": RESULT_URL}
+                    self.detail = {"parse_status": 3, "result_url": RESULT_URL}
                 with patch.object(asr.time, "sleep", side_effect=complete) as sleep:
                     self.assertEqual(asr.transcribe("/synthetic.wav"), {"json_url": RESULT_URL})
                 sleep.assert_called_once_with(asr.POLL_INTERVAL_SECONDS)
 
     def test_explicit_failure_and_timeout(self):
-        self.detail = {"parse_status": 4, "json_url": RESULT_URL}
+        self.detail = {"parse_status": 4, "result_url": ""}
         with self.assertRaises(asr.ToolError) as error:
             asr.transcribe("/synthetic.wav")
-        self.assertEqual(error.exception.code, "NO_SPEECH")
-        for detail in ({"parse_status": 2}, {"json_url": ""}):
+        self.assertEqual(error.exception.code, "TRANSCRIPTION_FAILED")
+        for detail in ({"parse_status": 1, "result_url": ""}, {"parse_status": 2, "result_url": ""}):
             with self.subTest(detail=detail):
                 self.detail = detail
                 with patch.object(asr.time, "monotonic", side_effect=[0, 0, asr.TIMEOUT_SECONDS]), \
@@ -167,7 +172,7 @@ class TranscribeTests(unittest.TestCase):
                 self.assertEqual(error.exception.code, "TIMEOUT")
 
     def test_main_emits_url_and_rejects_removed_option(self):
-        self.detail = {"json_url": RESULT_URL}
+        self.detail = {"parse_status": 3, "result_url": RESULT_URL}
         stdout = io.StringIO()
         with contextlib.redirect_stdout(stdout):
             self.assertEqual(asr.main(["transcribe", "/synthetic.wav"]), 0)
@@ -189,6 +194,11 @@ class EditorResultTests(unittest.TestCase):
             self.assertEqual(asr.validate_editor_result(payload), before)
             self.assertEqual(payload, before)
 
+    def test_channel_need_not_include_word_only_speaker(self):
+        result = copy.deepcopy(RESULT)
+        result["rich_result"]["sentences"][0]["words"][0]["channel_id"] = 2
+        self.assertEqual(asr.validate_editor_result(result), result)
+
     def test_invalid_channels_and_legacy_result_rejected(self):
         for channels in (None, {}, [True], ["7"], [7, 7], []):
             with self.subTest(channels=channels), self.assertRaises(asr.ToolError):
@@ -196,7 +206,7 @@ class EditorResultTests(unittest.TestCase):
         with self.assertRaises(asr.ToolError):
             asr.validate_editor_result({"rich_result": RESULT["rich_result"], "speaker_mapping": {"7": "说话人1"}})
         result = copy.deepcopy(RESULT)
-        result["rich_result"]["sentences"][0]["words"][0]["channel_id"] = 2
+        result["rich_result"]["sentences"][0]["channel_id"] = 2
         with self.assertRaises(asr.ToolError):
             asr.validate_editor_result(result)
 

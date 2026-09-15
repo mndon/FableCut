@@ -60,7 +60,7 @@
 
 `media.kind` 支持 `video`、`audio`、`image`、`svg`。文本和调整层没有媒体记录。
 
-`media.asrUrl` 可选，保存完整原始素材的 ASR JSON HTTP(S) 地址。JSON 包含 `rich_result` 与 `speaker_mapping`，时间戳为源素材毫秒；剪切、变速不改变它。导入时通过 `--asr-url` 保存，跨设备按该地址下载复用。
+`media.asrUrl` 可选，保存完整原始素材的 ASR JSON HTTP(S) 地址。JSON 包含 `rich_result` 与 `channel`，时间戳为源素材毫秒；剪切、变速不改变它。导入时通过 `--asr-url` 保存，跨设备按该地址下载复用。
 
 `clip.kind` 支持 `video`、`audio`、`image`、`svg`、`text`、`adjust`。`text` 和 `adjust` 的 `mediaId` 为 `null`。
 

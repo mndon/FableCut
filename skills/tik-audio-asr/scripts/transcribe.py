@@ -313,9 +313,8 @@ def validate_channels(value: Any, rich: dict[str, Any] | None) -> list[int]:
         raise ToolError("INVALID_RESPONSE", "ASR 结果需要有效的 channel 数组，不支持旧格式")
     if rich is not None:
         for sentence in rich["sentences"]:
-            ids = [sentence["channel_id"], *(word["channel_id"] for word in sentence.get("words") or [])]
-            if any(type(cid) is not int or cid not in value for cid in ids):
-                raise ToolError("INVALID_RESPONSE", "channel 未包含句子或词中的声音 ID")
+            if sentence["channel_id"] not in value:
+                raise ToolError("INVALID_RESPONSE", "channel 未包含句子中的声音 ID")
     return value
 
 
@@ -337,7 +336,7 @@ def validate_json_url(value: Any) -> str:
             raise ValueError("invalid URL")
         parsed.port
     except ValueError as exc:
-        raise ToolError("INVALID_RESPONSE", "服务端未返回有效的 json_url") from exc
+        raise ToolError("INVALID_RESPONSE", "ASR 结果链接必须是有效的 HTTP(S) URL") from exc
     return value
 
 
@@ -370,7 +369,6 @@ def transcribe_audio(audio_path: str) -> dict[str, Any]:
             "desktop_file_name": metadata.path.name,
         },
         "without_merge_word": True,
-        "for_editor": 1,
     })
     task_id = task.get("Id", task.get("id")) if isinstance(task, dict) else None
     if isinstance(task_id, bool) or not isinstance(task_id, int) or task_id <= 0:
@@ -393,21 +391,16 @@ def transcribe_audio(audio_path: str) -> dict[str, Any]:
         if not urls or not isinstance(urls[0], str) or not urls[0]:
             raise ToolError("INVALID_RESPONSE", "服务端未返回有效的音频上传地址")
         client.upload_audio(urls[0], metadata.path)
-    client.api_request(f"/api/v2/toolExtract/{task_id}/audioTask", "POST", {"split": True})
+    client.api_request(f"/api/v2/toolExtract/{task_id}/audioTask", "POST", {"split": True, "for_editor": 1})
     deadline = time.monotonic() + TIMEOUT_SECONDS
     while time.monotonic() < deadline:
         detail = client.api_request(f"/api/v2/toolExtract/{task_id}", "GET")
         status = detail.get("parse_status") if isinstance(detail, dict) else None
-        # Editor details use an empty URL while processing and omit parse_status.
-        if isinstance(detail, dict) and "parse_status" not in detail and "json_url" in detail:
-            if detail["json_url"] != "":
-                return {"json_url": validate_json_url(detail["json_url"])}
-            status = 2
         if status == 3:
-            return {"json_url": validate_json_url(detail.get("json_url"))}
+            return {"json_url": validate_json_url(detail.get("result_url"))}
         if status == 4:
-            raise ToolError("NO_SPEECH", "音频中未检测到有效说话声")
-        if status != 2:
+            raise ToolError("TRANSCRIPTION_FAILED", "服务端音频解析异常")
+        if type(status) is not int or status not in (1, 2):
             raise ToolError("INVALID_RESPONSE", f"服务端返回未知解析状态 {status}")
         time.sleep(POLL_INTERVAL_SECONDS)
     raise ToolError("TIMEOUT", "音频转写超过 30 分钟")

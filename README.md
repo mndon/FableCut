@@ -267,7 +267,7 @@ tik-editvideo-cli import-media --project my-edit --path /absolute/path/intro.mp4
 
 The optional `media.asrUrl` field is preserved in `project.json`, including browser
 saves and CLI project round trips. Another device can download that URL to reuse
-the complete original-source ASR JSON (`rich_result` and `speaker_mapping`, with
+the complete original-source ASR JSON (`rich_result` and `channel`, with
 timestamps in milliseconds). `addMedia` also accepts `asrUrl`; compact CLI output
 shows `asr=yes`, while full project output includes the URL. Existing projects
 remain compatible. The CLI does not download transcripts; URL availability and
