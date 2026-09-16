@@ -1,14 +1,15 @@
 # 数据契约与本地工具
 
-命令中的 SKILL_DIR、RUN_DIR 为绝对路径。Python 3 标准库即可运行数据脚本；媒体探查需 ffprobe，音频提取遵循 tik-audio-asr。不在临时 Python 中猜 JSON 形状或用字符串替换编辑数据。
+命令中的 SKILL_DIR、RUN_DIR 为绝对路径。数据脚本仅需 Python 3 标准库；媒体准备需 ffprobe/ffmpeg，转写遵循 tik-audio-asr。不在临时 Python 中猜 JSON 形状或用字符串替换编辑数据。
 
 ## 文件与时间
 
-run 根目录放 `<作业名>_<倍速>x.mp4`；字幕版另存 `<作业名>_<倍速>x_字幕.mp4`。其余在 intermediate/：
+默认交付工程预览 URL，不生成成片文件。用户明确要求导出时，run 根目录放 `<作业名>_<倍速>x.mp4`；字幕版另存 `<作业名>_<倍速>x_字幕.mp4`。作业数据在 intermediate/，其中 prepared.mp4 是预处理素材，不是成片导出：
 
 | 文件 | 内容 |
 | --- | --- |
-| sources.json | 原始素材、探查/ASR路径、ASR URL、可选范围、导入ID |
+| sources.json | 实际素材、探查/ASR路径、ASR URL、可选范围、导入ID |
+| s1/preparation.json、prepared.mp4、prepare.log | 准备记录；MP4和日志仅归一化时生成，原文件保留 |
 | s1/video_info.json、audio_info.json、audio.json | 每素材的探查与原始ASR；更多素材用s2等 |
 | sentences.json、speakers_summary.json | 稳定全量短语与声音摘要 |
 | content.json | 商品区间与语义组，模型标注，不改原ASR |
@@ -16,22 +17,38 @@ run 根目录放 `<作业名>_<倍速>x.mp4`；字幕版另存 `<作业名>_<倍
 | ops.json、pending_mapping.json | 待提交操作和映射 |
 | project.json、submitted_mapping.json | CLI完整读回快照与已验证映射 |
 
-ASR 为原始素材毫秒；sentences/words 为原始素材秒。FableCut in 为源秒，start/duration 为成片秒：duration = (end-start)/speed。不能再次除倍速、加预切偏移或跨文件累计源时间。
+所有源时间均以 `source.path` 指向的实际转写与导入素材为准：ASR 用毫秒，sentences/words 和 FableCut in 用秒；start/duration 为成片秒，duration = (end-start)/speed。不能再加减归一化偏移、再次除倍速或跨文件累计源时间。
 
-## 探查与转写
+## 准备素材
+
+新素材先准备，成功后才进入 ASR 和剪辑；本步无需转写凭据。已有 ASR/工程保留素材绑定，按下节复用。
+
+```bash
+python3 "$SKILL_DIR/scripts/prepare_video.py" "/绝对路径/素材.mp4" --out-dir "$RUN_DIR/intermediate/s1"
+```
+
+命令成功后读取 preparation.json：`path` 为后续唯一素材路径，`probe` 为 video_info.json，`normalized` 表示是否处理。把 `path`、`probe` 及可选的 `original_path`、`normalization` 写入 sources.json 对应 source，再进入下节；不假定总会生成 prepared.mp4。记录还包含原始流起点，处理时另含裁头/补静音秒数和视频时长。
+
+音视频起点距零及相互差值均≤0.1秒时复用原文件；否则以视频起点统一平移，裁掉此前音频或补入开头静音，音频尾部补齐/截到视频末尾。视频流复制，音频编码 AAC，不拉伸语音。先复核起点、时长及视频基本信息再发布 prepared.mp4；失败停止，不回退视频重编码。输出文件已存在则拒绝覆盖。该处理不修复内容本身的口型错位或非均匀漂移。
+
+## 获取转写
+
+先复用与 `source.path` 绑定的本地 JSON 或工程 `media.asrUrl`，跳过凭据检查、音频提取和转写。若需检查旧素材是否适用，使用独立检查目录运行准备脚本并加 `--existing-asr`，需要归一化时会拒绝；报告需新作业与对应 ASR，不把旧 ASR 绑定到新素材。
+
+需要新转写时，先执行安全环境检查；缺凭据停止，不搜索 shell 配置：
 
 ```bash
 python3 "$SKILL_DIR/../tik-audio-asr/scripts/check_environment.py"
-python3 "$SKILL_DIR/scripts/probe_video.py" "/绝对路径/素材.mp4" --out "$RUN_DIR/intermediate/s1/video_info.json"
 ```
 
-按 ASR 技能提取完整临时 MP3 后复核：
+将准备结果已写入的 `source.path` 设为 `SOURCE_PATH`，提取完整临时 MP3（保留补入的静音）后复核：
 
 ```bash
-python3 "$SKILL_DIR/scripts/probe_video.py" "/绝对路径/素材.mp4" --audio "$RUN_DIR/intermediate/s1/audio.mp3" --out "$RUN_DIR/intermediate/s1/audio_info.json"
+ffmpeg -nostdin -v error -n -i "$SOURCE_PATH" -map 0:a:0 -vn -ac 1 -ar 16000 -c:a libmp3lame -q:a 4 "$RUN_DIR/intermediate/s1/audio.mp3"
+python3 "$SKILL_DIR/scripts/probe_video.py" "$SOURCE_PATH" --audio "$RUN_DIR/intermediate/s1/audio.mp3" --out "$RUN_DIR/intermediate/s1/audio_info.json"
 ```
 
-原点差>0.1秒、时长差>0.5秒失败。非均匀漂移不得用常数补偿；检查素材和提取步骤，不伪造时间戳。复核成功后转写获取 JSON URL：
+原点差>0.1秒、提取音频与实际素材时长差>0.5秒失败；检查准备和提取步骤，不伪造时间戳。复核成功后转写获取 JSON URL：
 
 ```bash
 python3 "$SKILL_DIR/../tik-audio-asr/scripts/transcribe.py" transcribe "$RUN_DIR/intermediate/s1/audio.mp3"
@@ -45,14 +62,18 @@ python3 "$SKILL_DIR/../tik-audio-asr/scripts/download_result.py" "$ASR_URL" --ou
 
 原始 JSON 使用 `rich_result` 和 `channel`。`rich_result` 为空或没有句子时停止选句，不自动重转。
 
-`ASR_URL` 使用真实返回地址。转写成功后清理临时音频；下载失败保留 URL 并报告，不重新转写。已有工程时，先从对应 `media.asrUrl` 取得地址并下载，跳过凭据检查、音频提取和转写；已有本地原始 JSON 则直接复用。
+`ASR_URL` 使用真实返回地址。转写成功后清理临时音频，保留 prepared.mp4；下载失败保留 URL 并报告，不重新转写。
 
-sources.json 的顶层为 sources 数组，每项例如：
+## 素材记录与索引
+
+sources.json 的顶层为 sources 数组；准备后先写素材字段，获得 ASR 后补 transcript/asr_url，再构建索引。完整记录例如：
 ```json
 {
   "sources": [{
     "id": "s1",
-    "path": "/绝对路径/源视频.mp4",
+    "path": "/绝对路径/run/intermediate/s1/prepared.mp4",
+    "original_path": "/绝对路径/源视频.mp4",
+    "normalization": "/绝对路径/run/intermediate/s1/preparation.json",
     "probe": "/绝对路径/run/intermediate/s1/video_info.json",
     "transcript": "/绝对路径/run/intermediate/s1/audio.json",
     "asr_url": "https://example.com/s1-asr.json"
@@ -60,7 +81,7 @@ sources.json 的顶层为 sources 数组，每项例如：
 }
 ```
 
-用户指定范围才加 range: [起秒, 止秒]，只允许完整落入范围的短语。media_id 在导入后由工具写入，不先填示例ID；复用已有工程时使用其中真实素材 ID。新转写须记录 asr_url，旧作业未记录时仍可复用其本地结果。素材顺序决定跨文件 index 顺序。
+未处理的素材使用原路径，省略 original_path/normalization。用户指定范围才加 range: [起秒, 止秒]，以实际素材时间为准，只允许完整落入范围的短语；用户给的是原文件时间时先明确其时间原点再换算，不直接沿用。media_id 在导入后由工具写入，不先填示例ID；复用已有工程时使用其中真实素材 ID。新转写须记录 asr_url，旧作业未记录时仍可复用其本地结果。素材顺序决定跨文件 index 顺序。
 
 ```bash
 python3 "$SKILL_DIR/scripts/build_sentences.py" --sources "$RUN_DIR/intermediate/sources.json" --out "$RUN_DIR/intermediate"

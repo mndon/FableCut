@@ -22,7 +22,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
 
-API_BASE_URL = "http://127.0.0.1:8000/open"
+API_BASE_URL = "https://skgw-tik.tttci.com/open"
 CLIENT_ID = "10104"
 SUCCESS_STATUS = 2000
 AUTH_FAILURE_STATUSES = {4010, 4011}

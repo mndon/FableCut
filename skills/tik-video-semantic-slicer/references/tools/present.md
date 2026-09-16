@@ -22,6 +22,6 @@ python3 "$SKILL_DIR/scripts/render_selection.py" --sentences "$RUN_DIR/intermedi
 python3 "$SKILL_DIR/scripts/render_selection.py" --sentences "$RUN_DIR/intermediate/sentences.json" --selection "$RUN_DIR/intermediate/keep_selection.json" --config "$RUN_DIR/intermediate/edit_config.json" --content "$RUN_DIR/intermediate/content.json"
 ```
 
-出片后再加 --project project.json --mapping submitted_mapping.json，均为最新完整读回/校验文件；工具验证配置与已提交内容指纹，时间从实际工程取值。修改后完整重渲染，不只贴 diff。
+用户要求查看已提交工程的脚本时，再加 --project project.json --mapping submitted_mapping.json，均为最新完整读回/校验文件；工具验证配置与已提交内容指纹，时间从实际工程取值。展示修改后的脚本时完整重渲染，不只贴 diff；默认交付预览 URL，不自动展开完整脚本。
 
 列为编号/源时间/秒/成片时间/文本；语义组可包含多行短语，精调可使同编号多行。字幕文字更正不改变原声脚本，另作说明。最终链接用可点击路径，不把工程快照说成包含独立配置/映射；本地预览地址不能称为外网分享地址。

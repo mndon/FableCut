@@ -10,7 +10,7 @@
 tik-editvideo-cli create-project --name "服装语义切片"
 ```
 
-每个原始文件使用 `import-media --project <真实ID> --path <绝对路径> --asr-url <对应source.asr_url>`，成功 JSON 保存到该素材的 import.json，用 selection_tools.py bind-media 写入 sources.json。绑定时检查返回的 `media.asrUrl` 与 source 一致。素材 ID 与远端 media.src 均以 CLI 返回的信息为准。复用已注册素材时直接使用其真实 ID 与 asrUrl，不重复导入；旧作业没有 URL 时省略该参数，不伪造地址。
+每个素材使用 `import-media --project <真实ID> --path <source.path绝对路径> --asr-url <对应source.asr_url>`；path 必须与转写素材一致，归一化后不导入 original_path、不再次调整 ASR 时间。成功 JSON 保存到该素材的 import.json，用 selection_tools.py bind-media 写入 sources.json。绑定时检查返回的 `media.asrUrl` 与 source 一致。素材 ID 与远端 media.src 均以 CLI 返回的信息为准。复用已注册素材时直接使用其真实 ID 与 asrUrl，不重复导入；旧作业没有 URL 时省略该参数，不伪造地址。
 
 生成操作前运行 `get-project --project <真实ID>` 保存完整原生项目文档为 project.json，记录实际 revision。紧凑摘要只供快速检查，不能代替完整项目作为脚本输入。
 
@@ -48,9 +48,17 @@ python3 "$SKILL_DIR/scripts/verify_output.py" --project "$RUN_DIR/intermediate/p
 
 变速、转场、字幕和片段更新都重新生成操作、提交、读回验证，再用工程映射展示完整脚本。用户手动改过管理片段时先协调具体差异，不能从旧 mapping 静默覆盖手工修改。
 
-## 导出与交付
+## 预览与交付
 
-按 tik-edit-video 检查 Chrome/Chromium 等导出依赖，使用其 `export` 命令：
+默认不导出 MP4，也不检查导出依赖。提交并读回验证通过后，按可用能力在工程预览中检查画面、字幕安全区、音画同步和切点听感，按 editorial.md 更新记录；未检查的标为待验，不为验收自动导出。
+
+交付可点击的实际工程预览 URL，有待验项时简要说明即可。链接使用实际 `FABLECUT_URL` 加 `/?project=<真实ID>`；未配置时使用 CLI 文档默认 `http://127.0.0.1:7777`。Token 不放进链接，本地地址不能称为外网可分享链接。
+
+包含素材 asrUrl 的工程快照、配置、映射、内容审核记录保存在作业目录，不默认逐项贴出路径或完整脚本。用户要求时按 present.md 从最新工程渲染完整脚本。修改后同样交付预览 URL，不因历史导出自动重导。
+
+## 按需导出
+
+仅用户明确要求本次导出时执行本节，不另行询问确认。按 tik-edit-video 检查 Chrome/Chromium 等导出依赖，使用其 `export` 命令：
 
 ```bash
 tik-editvideo-cli export --project "$PROJECT_ID" --output "$RUN_DIR/服装语义切片_1.1x.mp4"
@@ -64,6 +72,4 @@ python3 "$SKILL_DIR/scripts/verify_output.py" --project "$RUN_DIR/intermediate/p
 
 校验内容：片段 ID/顺序对应的几何、倍速、字幕属性、素材边界、有效轨道、35–90秒工程总长、导出时长差≤1秒、画幅、H.264及音视频流；音视频流时长差>0.2秒拒绝。不额外限制 H.264 的 profile/level。工程有截取 in/out 点时必须先明确，否则不能保证导出的是完整切片。
 
-检查 FPS、响度、字幕安全区和切点听感；程序不判断业务语义或口型同步。预览链接为实际 `FABLECUT_URL` 加 `/?project=<真实ID>`，未配置服务地址时使用 CLI 文档的默认 `http://127.0.0.1:7777`。Token 不放进链接；本地地址不能宣称为外网可分享链接。
-
-最终展示：可点击的 MP4、项目预览、包含素材 asrUrl 的完整工程快照与独立配置/映射/审核路径、render_selection 从工程渲染的完整脚本。其他设备可从工程的素材 URL 下载复用 ASR。按 editorial.md 分别报告工程、内容审核记录、画面和听感状态；能力缺失交待验稿，不标成全部验收通过。
+按可用能力检查导出文件的 FPS、响度、字幕安全区和切点听感；程序不判断业务语义或口型同步，ffprobe 不代表试听。交付时在预览 URL 外追加可点击 MP4 链接，未验项简要说明，不标成全部验收通过。

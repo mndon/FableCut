@@ -32,12 +32,12 @@ review.json 的 media.visual / media.audio 各记录 status 与 evidence：
 - unavailable：当前能力不支持；写具体缺失能力。
 - pass：已实际检查；写成片时间/源时间与观察依据。
 
-选句阶段优先检查换款边界和属性画面，导出后检查开头、跨段跳接及结尾。短片可用时完整试听；不能用图片推断切点听感，不能把源片抽帧称为成片验收。视听状态绑定当前方案，换句或修改速度等后重新检查。
+选句阶段优先检查换款边界和属性画面，提交后在工程预览中检查开头、跨段跳接及结尾；用户要求导出时再检查 MP4。可试听时完整试听；不能用图片推断切点听感，不能把源片抽帧称为成片验收。视听状态绑定当前方案，换句或修改速度等后重新检查。
 
-已知商品/语义冲突须解决后才能提交；视听能力缺失可交待验稿，明确保留项目。视听发现问题则记录、修正并重新审核导出，不保持 pass。
+已知商品/语义冲突须解决后才能提交；视听能力缺失可交预览链接并说明待验，不为验收自动导出。视听发现问题则记录、修正、重新提交并审核预览，不保持 pass。
 
 ```bash
 python3 "$SKILL_DIR/scripts/selection_tools.py" check-review --sentences "$RUN_DIR/intermediate/sentences.json" --selection "$RUN_DIR/intermediate/keep_selection.json" --config "$RUN_DIR/intermediate/edit_config.json" --content "$RUN_DIR/intermediate/content.json" --review "$RUN_DIR/intermediate/review.json"
 ```
 
-交付分别报告：工程校验、内容审核记录、画面检查、听感检查。附独立配置、content、review、submitted_mapping 路径；它们不在原生 project.json 内。
+工程校验、内容审核、画面与听感状态分别记录。默认交付预览 URL，有待验项时简要说明；独立配置、content、review、submitted_mapping 留在作业目录，不在原生 project.json 内，按需提供。
