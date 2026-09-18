@@ -1,4 +1,4 @@
-"""Verify actual FableCut geometry and optionally its exported MP4."""
+"""Verify actual tik-editvideo-cli geometry and optionally its exported MP4."""
 import argparse
 from fractions import Fraction
 

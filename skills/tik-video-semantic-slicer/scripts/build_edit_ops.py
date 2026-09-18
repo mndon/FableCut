@@ -1,4 +1,4 @@
-"""Generate FableCut patch data without executing CLI, HTTP, or a renderer."""
+"""Generate tik-editvideo-cli patch data without executing CLI, HTTP, or a renderer."""
 import argparse
 import re
 from pathlib import Path
@@ -96,7 +96,7 @@ def build(sentences, selection, config, sources, project, project_id, previous=N
     transition = config.get("transition", {"type": "none"})
     kind = transition["type"]
     if kind not in TRANSITIONS:
-        raise ValueError("Unknown FableCut transition")
+        raise ValueError("Unknown tik-editvideo-cli transition")
     overlap = 0 if kind == "none" else number(transition.get("duration", 0.3), "transition.duration", 0.001)
     cursor, entries = 0.0, []
     for sentence in selected:

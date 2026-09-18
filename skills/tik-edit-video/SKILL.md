@@ -1,11 +1,13 @@
 ---
 name: tik-edit-video
-description: 使用 tik-editvideo-cli 剪辑视频，支持素材导入、时间线编辑、预览和导出。适用于创建或修改视频剪辑项目。
+description: 通过 tik-editvideo-cli 编辑 project.json 工程文件来剪辑视频（edits videos by editing project.json），支持素材导入、时间线编辑、工程读取与回写、预览和导出。适用于创建或修改视频剪辑项目，以及其他 skill 的 project.json 工程交接。
 ---
 
 # 使用 tik-editvideo-cli 剪辑视频
 
-使用全局安装的 `tik-editvideo-cli` 进行剪辑和导出操作；本 skill 不内置 CLI。
+本 skill 通过**编辑 `project.json`** 来剪辑视频（edits videos by **editing `project.json`**）。`project.json` 是 tik-editvideo-cli 的原生工程文件，保存素材、时间线片段、画幅、FPS 和 revision，可供其他 skill 读取、修改和交接。
+
+使用全局安装的 `tik-editvideo-cli` 读取和提交工程、预览及导出；本 skill 不内置 CLI。使用 `get-project`（不加 `--compact`）读取完整工程，局部修改优先用 `patch-project`，完整工程回写用 `set-project` 并保留最近完整读取的 revision，由 CLI 校验冲突并递增版本。
 
 ## 初始化 CLI
 

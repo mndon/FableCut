@@ -1,4 +1,4 @@
-# FableCut 剪辑与验证
+# tik-editvideo-cli 剪辑与验证
 
 先完整读取 tik-edit-video 的 SKILL.md，按任务读其项目结构、时间语义、文本与转场参考。这里只描述语义选句如何接到该技能；不实现传输或渲染。
 
@@ -42,7 +42,7 @@ python3 "$SKILL_DIR/scripts/verify_output.py" --project "$RUN_DIR/intermediate/p
 
 ## 字幕与句内调整
 
-字幕开启时通过 FableCut 生成 V2 文本片段。默认 Noto Sans SC、白字、底部深色背景、静态显示、文本框自动适配；预览确认中文字体已加载且无缺字，按用户样式要求调整 subtitle_style。字幕随片段变速、移位、句内拆分更新，转场重叠时在下一片段开始处切换字幕，避免同位置叠字。
+字幕开启时通过 tik-editvideo-cli 生成 V2 文本片段。默认 Noto Sans SC、白字、底部深色背景、静态显示、文本框自动适配；预览确认中文字体已加载且无缺字，按用户样式要求调整 subtitle_style。字幕随片段变速、移位、句内拆分更新，转场重叠时在下一片段开始处切换字幕，避免同位置叠字。
 
 默认通过选句去废话。用户明确指定句内精调时，局部读取指定句 words，用真实边界写入 refinements；缺词级信息则说明无法可靠精调，不插值。重新生成 patch 会同时重排后续片段、字幕和 mapping。精调前展示拟保留的词段和时间；已授权的调整不额外重复问许可。
 
@@ -52,7 +52,7 @@ python3 "$SKILL_DIR/scripts/verify_output.py" --project "$RUN_DIR/intermediate/p
 
 默认不导出 MP4，也不检查导出依赖。提交并读回验证通过后，按可用能力在工程预览中检查画面、字幕安全区、音画同步和切点听感，按 editorial.md 更新记录；未检查的标为待验，不为验收自动导出。
 
-交付可点击的实际工程预览 URL，有待验项时简要说明即可。链接使用实际 `FABLECUT_URL` 加 `/?project=<真实ID>`；未配置时使用 CLI 文档默认 `http://127.0.0.1:7777`。Token 不放进链接，本地地址不能称为外网可分享链接。
+交付可点击的实际工程预览 URL，有待验项时简要说明即可。运行 `tik-editvideo-cli status --project <真实ID>`，使用返回的 `projectUrl`；本地地址不能称为外网可分享链接。
 
 包含素材 asrUrl 的工程快照、配置、映射、内容审核记录保存在作业目录，不默认逐项贴出路径或完整脚本。用户要求时按 present.md 从最新工程渲染完整脚本。修改后同样交付预览 URL，不因历史导出自动重导。
 

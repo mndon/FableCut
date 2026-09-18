@@ -1,0 +1,4 @@
+interface:
+  display_name: "tik视频切片师"
+  short_description: "从服装直播和带货口播中精选商品卖点与开头钩子，制作可预览和修改的短片"
+  default_prompt: "使用 $tik-video-semantic-slicer-connector 帮我把这段直播剪成一条带货短片，挑选有吸引力的开头、保留完整卖点，并展示成片预览。"

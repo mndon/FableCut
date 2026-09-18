@@ -215,6 +215,23 @@ That registers the MCP server for you and adds the local `edit-video` and
 directory, so an update never touches them. Node 18+ and (optionally) ffmpeg
 still need to be on your machine.
 
+### Cloud semantic slicing
+
+The `tik-video-semantic-slicer-connector` skill connects local preparation to
+`tik-video-semantic-slicer` on an Aliyun Managed Agent. Users work with it as a
+video slicing editor: choose a product, hook and selling points, then preview
+and refine the cut. The client installs the connector, `tik-edit-video` and
+`tik-audio-asr`; the server installs `tik-video-semantic-slicer` and
+`tik-edit-video`. The connector keeps media preparation and transport helpers,
+delegating ASR and editor operations to their respective skills. It sends a native
+FableCut `project.json` with a separate request, receives the edited project and
+result receipt, restores local media references, and opens the client preview.
+Run/input hashes and client revision checks prevent importing another job's
+result or overwriting edits made while the cloud agent was working. The project
+schema and preview/export compositor are unchanged. See
+[the connector skill](skills/tik-video-semantic-slicer-connector/SKILL.md) for
+dependencies and the session/file workflow.
+
 ### Or install the command-line interface
 
 The standalone npm package edits local projects without an HTTP server and

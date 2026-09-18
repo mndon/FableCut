@@ -1,11 +1,18 @@
 ---
 name: tik-video-semantic-slicer
-description: 将服装直播、带货口播按商品和语义精剪为35–90秒短片，生成FableCut工程，默认交付预览链接，按需导出MP4。用于tik视频切片、直播精剪；单独转写或普通时间线编辑分别使用tik-audio-asr、tik-edit-video。
+description: 将服装直播、带货口播按语义精剪为35–90秒短片。支持安装在客户端 Agent，按用户需求直接剪辑视频源文件；或安装在服务端 Agent，接收客户端传入的用户需求与 tik-editvideo-cli project.json，完成剪辑并回传工程。普通时间线编辑使用 tik-edit-video。
 ---
 
 # 服装直播语义切片
 
 模型负责商品识别、语义取舍与视听判断；Python 负责稳定编号、时间换算、数据校验。工程通过不代表内容合格。
+
+## 两种用法
+
+- **客户端直接剪辑**：安装在客户端 Agent，接收用户需求与视频源文件，按下方流程准备、转写和剪辑，默认交付预览，按需导出 MP4。
+- **服务端协作剪辑**：安装在服务端 Agent，接收客户端传入的用户需求与 tik-editvideo-cli `project.json`，按 [工程交接模式](references/tools/managed-handoff.md) 核验素材与 ASR，完成剪辑并回传可下载工程，由客户端展示。
+
+按实际输入选择流程；已有素材与转写核验后复用，不因部署位置假定已准备。配套 `request.json` 时按交接协议核验并回执。
 
 ## 准备与文本化
 
@@ -27,7 +34,7 @@ description: 将服装直播、带货口播按商品和语义精剪为35–90秒
 
 1. 剪辑前读取 [tik-edit-video](../tik-edit-video/SKILL.md)，按需读取其剪辑参考；依赖缺失先在当前技能目录查找，仍缺则报告。遵循其 CLI 安装、鉴权与失败边界，不检查实现、不自行替换客户端或渲染器。
 2. 按 [剪辑与验证](references/tools/editing.md) 导入 `source.path` 指向的实际转写素材，同时传入对应 ASR URL；绑定返回 ID、读取完整工程，生成一批 patch。提交后读回验证素材 URL 和剪辑，成功才把 pending mapping 保存为 submitted mapping。CLI 非零时停止本轮远端操作并保留产物，不用后续成功命令掩盖失败。
-3. 字幕启用时才读取 [术语库](references/business/apparel/glossary.md)，通过 FableCut 文本轨更正字幕，不改原声。未授权不增加配音、BGM、特效或转场。
+3. 字幕启用时才读取 [术语库](references/business/apparel/glossary.md)，通过 tik-editvideo-cli 文本轨更正字幕，不改原声。未授权不增加配音、BGM、特效或转场。
 4. 工程读回验证通过后，按可用能力在预览中检查商品画面、跳接、音画同步与结尾，更新审核中的视听状态。未检查的标为待验，不把截图当试听；不为验收自动导出。
 5. **默认仅交付可点击的实际工程预览 URL**，有待验项时简要说明。工程快照、配置、映射、审核记录留在作业目录，完整脚本按需展示。仅用户明确要求导出时才检查导出依赖、生成并验证 MP4，追加文件链接；不主动询问是否导出。
 6. 修改复用原 ASR、编号与工程；重新审核，先读最新工程、核对上轮 mapping，仅改本轮管理片段。外部改动先协调，不能用旧快照覆盖。修改后仍默认交付预览 URL，曾导出过不代表本轮需要导出。

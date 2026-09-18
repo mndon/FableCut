@@ -1,4 +1,4 @@
-"""Local data helpers only; no ASR client or FableCut transport."""
+"""Local data helpers only; no ASR client or tik-editvideo-cli transport."""
 import json
 import math
 import subprocess

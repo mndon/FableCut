@@ -92,6 +92,27 @@ Existing v1 root-level `project.json`, `media/`, `exports/`, and `analysis/` are
 migrated once to `projects/default/`. **Don't assume a project file is beside
 `mcp-server.js`** — call `fablecut_status`, which reports the real workspace.
 
+## Cloud semantic slicing connector
+
+`skills/tik-video-semantic-slicer-connector/` prepares and aligns client-side
+sources and coordinates `tik-audio-asr` and `tik-edit-video`.
+The client installs those three skills; the server installs
+`tik-video-semantic-slicer` and `tik-edit-video`. The connector bundles only
+preparation and transport helpers. Its user-facing role is a video slicing
+editor, with transport details in supporting references. It hands a
+native FableCut `project.json` plus a separate `request.json` to
+an Aliyun Managed Agent running `tik-video-semantic-slicer`, and receives a
+native project plus `result.json`. This is not the Managed Agent IaC project
+format. No fields are added to the FableCut schema.
+
+The connector's standard-library Python helpers export portable media references,
+bind responses to a run and input hash, and restore original client media by ID.
+They stage offline documents only. Apply through `tik-editvideo-cli set-project`
+with the unchanged client revision; reject changes since dispatch instead of
+overwriting concurrent edits. The client obtains the actual local preview URL
+from `status`. Preview and optional MP4 export retain the existing compositor.
+See the connector skill for file limits, session creation, and server handoff.
+
 ## Run
 
 ```

@@ -17,7 +17,7 @@
 | ops.json、pending_mapping.json | 待提交操作和映射 |
 | project.json、submitted_mapping.json | CLI完整读回快照与已验证映射 |
 
-所有源时间均以 `source.path` 指向的实际转写与导入素材为准：ASR 用毫秒，sentences/words 和 FableCut in 用秒；start/duration 为成片秒，duration = (end-start)/speed。不能再加减归一化偏移、再次除倍速或跨文件累计源时间。
+所有源时间均以 `source.path` 指向的实际转写与导入素材为准：ASR 用毫秒，sentences/words 和 tik-editvideo-cli in 用秒；start/duration 为成片秒，duration = (end-start)/speed。不能再加减归一化偏移、再次除倍速或跨文件累计源时间。
 
 ## 准备素材
 
