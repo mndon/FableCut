@@ -165,6 +165,10 @@
       <input type="radio" name="engine" id="engineRealtime">
       <span><b>Realtime (in-browser)</b><br><span class="dim">Plays the timeline once and records it. Keep the tab focused.</span></span>
     </label>
+    <label class="engine-opt">
+      <input type="radio" name="engine" id="engineOptimized">
+      <span><b>Optimized (ffmpeg + frame cache)</b><br><span class="dim" id="engineOptimizedNote">Pre-decodes video frames and caches them. First export needs preparation; you can switch tabs.</span></span>
+    </label>
     <div class="export-track-warn hidden" id="exportTrackWarn" role="status"></div>
     <div class="dialog-actions">
       <button class="btn" id="btnCancelSetup">Cancel</button>
@@ -246,6 +250,7 @@
 
 <div id="toast"></div>
 
+<script src="optimized-export.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

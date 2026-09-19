@@ -7,7 +7,7 @@ const cliDir = path.resolve(__dirname, "..");
 const root = path.resolve(cliDir, "..");
 const target = path.join(cliDir, "runtime");
 const entries = [
-  "server.js", "paths.js", "project-store.js", "analyze.js", "app.js", "index.html", "style.css",
+  "server.js", "export-cache.js", "optimized-export.js", "optimized-encoder-worker.js", "paths.js", "project-store.js", "analyze.js", "app.js", "index.html", "style.css",
   "meter-worklet.js", "ruler-worker.js", "manifest.json", "favicon.svg", "icons", "library",
 ];
 

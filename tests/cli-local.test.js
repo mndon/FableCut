@@ -126,7 +126,7 @@ test("MCP and CLI patches share the project transaction lock", async t => {
   assert.equal(doc.clips.length, 10); assert.equal(doc.revision, 10);
 });
 
-test("export starts the server and renders a real MP4 with the browser compositor", { timeout: 90000 }, async t => {
+test("export starts the server and renders a real MP4 with the browser compositor", { timeout: 150000 }, async t => {
   const { spawnSync } = require("node:child_process");
   const candidates = [process.env.CHROME_PATH, "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe", "google-chrome", "chromium"].filter(Boolean);
   const browser = candidates.find(candidate => path.isAbsolute(candidate) ? fs.existsSync(candidate) : spawnSync(candidate, ["--version"]).status === 0);
@@ -141,7 +141,16 @@ test("export starts the server and renders a real MP4 with the browser composito
   assert.ok(!fs.existsSync(path.join(dataDir, "server.log")));
   const output = path.join(home, "render.mp4");
   let result;
-  try { result = await run(["export", "--project", "render", "--output", output, "--port", String(p), "--browser", browser, "--timeout", "60"]); }
+  try {
+    result = await run(["export", "--project", "render", "--output", output, "--port", String(p), "--browser", browser, "--timeout", "60"]);
+    if (result.code === 0) {
+      const optimizedOutput = path.join(home, "optimized.mp4");
+      const optimized = json(await run(["export", "--project", "render", "--engine", "optimized", "--output", optimizedOutput, "--port", String(p), "--browser", browser, "--timeout", "60"]));
+      assert.equal(optimized.output, optimizedOutput); assert.equal(optimized.metrics.engine, "optimized"); assert.equal(optimized.metrics.frames, 10);
+      const frames = JSON.parse(spawnSync("ffprobe", ["-v", "error", "-show_streams", "-of", "json", optimizedOutput], { encoding: "utf8" }).stdout);
+      assert.equal(Number(frames.streams[0].nb_frames), 10);
+    }
+  }
   finally {
     try { const status = await (await fetch(`http://127.0.0.1:${p}/api/status`)).json(); process.kill(status.pid); } catch {}
     await new Promise(resolve => setTimeout(resolve, 200));
@@ -153,4 +162,11 @@ test("export starts the server and renders a real MP4 with the browser composito
   assert.ok(Number(info.format.duration) >= 1);
   const pixel = spawnSync("ffmpeg", ["-v", "error", "-i", output, "-vf", "crop=2:2:0:0,scale=1:1", "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgb24", "pipe:1"]).stdout;
   assert.ok(pixel[0] > 200 && pixel[1] < 40 && pixel[2] < 40, "export should contain the red project background");
+});
+
+test("export rejects an unknown engine before starting the server", async t => {
+  const { run, dataDir } = fixture(t);
+  const result = await run(["export", "--project", "missing", "--engine", "invalid"]);
+  assert.notEqual(result.code, 0); assert.match(result.stderr, /--engine must be fast or optimized/);
+  assert.ok(!fs.existsSync(path.join(dataDir, "server.log")));
 });

@@ -258,10 +258,13 @@ async function download(client, src, target, force) {
 }
 
 async function exportProject(client, options) {
+  const engine = options.engine === undefined ? "fast" : options.engine;
+  if (!["fast", "optimized"].includes(engine)) throw new CliError("--engine must be fast or optimized");
   const projectId = requireOption(options, "project");
   const project = await getProject(client, projectId);
   const ffmpeg = await client.request("GET", "/api/export/ffmpeg");
   if (!ffmpeg.available) throw new CliError("The FableCut server cannot find ffmpeg on PATH");
+  if (engine === "optimized" && !ffmpeg.ffprobe) throw new CliError("Optimized export requires ffprobe");
   const name = String(options.name || project.name || "export").replace(/[^\w\- ]+/g, "") || "export";
   const defaultFile = name.replace(/\s+/g, "-") + ".mp4";
   const output = path.resolve(String(options.output || defaultFile));
@@ -275,6 +278,7 @@ async function exportProject(client, options) {
   url.searchParams.set("project", projectId);
   url.searchParams.set("cliExport", requestId);
   url.searchParams.set("cliExportName", name);
+  url.searchParams.set("cliExportEngine", engine);
   // HEVC playback in Chrome requires hardware decoding. Do not disable the GPU.
   const chrome = spawn(browserPath, ["--headless=new", "--no-first-run", "--no-default-browser-check", "--autoplay-policy=no-user-gesture-required", "--disable-background-timer-throttling", "--disable-renderer-backgrounding", "--user-data-dir=" + profile, "--window-size=1440,1000", url.href], { stdio: ["ignore", "ignore", "pipe"] });
   let launchError;
@@ -296,7 +300,7 @@ async function exportProject(client, options) {
     }
     if (!status || status.state !== "complete") throw new CliError(`Export timed out after ${timeoutSeconds} seconds`);
     await download(client, status.src, output, !!options.force);
-    console.log(JSON.stringify({ ok: true, project: projectId, output, src: status.src }, null, 2));
+    console.log(JSON.stringify({ ok: true, project: projectId, output, src: status.src, ...(status.metrics ? { metrics: status.metrics } : {}) }, null, 2));
   } finally {
     if (chrome.exitCode === null) chrome.kill();
     const killTimer = setTimeout(() => chrome.kill("SIGKILL"), 3000);
@@ -317,7 +321,7 @@ Usage:
   tik-editvideo-cli import-media --project <id> --path <file> [--asr-url <url>]
   tik-editvideo-cli status [--project <id>] [--host <host>] [--port <port>]
   tik-editvideo-cli server start [--host <host>] [--port <port>]
-  tik-editvideo-cli export --project <id> [--name <name>] [--output <mp4>] [--force]
+  tik-editvideo-cli export --project <id> [--name <name>] [--output <mp4>] [--engine fast|optimized] [--force]
                      [--browser <path>] [--timeout <seconds>] [--host <host>] [--port <port>]
 
 Editing works without a server. status starts a background preview server if needed;
@@ -407,6 +411,7 @@ async function main(argv = process.argv.slice(2)) {
     catch (error) { fs.rmSync(target, { force: true }); throw error; }
     print({ ok: true, project: id, revision: project.revision, media });
   } else if (command === "export") {
+    if (options.engine !== undefined && !["fast", "optimized"].includes(options.engine)) throw new CliError("--engine must be fast or optimized");
     requireOption(options, "project");
     const status = await ensureServer(local, options);
     await exportProject(new ExportClient(status.url), options);

@@ -20,6 +20,7 @@ const { spawn, spawnSync, execFile } = require("child_process");
 
 const { analyze } = require("./analyze");
 const store = require("./project-store");
+const { ExportCache } = require("./export-cache");
 
 const {
   APP_DIR, DATA_DIR, PROJECTS_DIR, LIBRARY_DIR, LIBRARY_SUBDIRS,
@@ -60,6 +61,10 @@ function requestAllowed(req) {
    Everything else works without it. */
 let HAS_FFMPEG = false;
 try { HAS_FFMPEG = spawnSync("ffmpeg", ["-version"], { stdio: "ignore" }).status === 0; } catch {}
+
+let HAS_FFPROBE = false;
+try { HAS_FFPROBE = spawnSync("ffprobe", ["-version"], { stdio: "ignore" }).status === 0; } catch {}
+const sourceCache = new ExportCache({ libraryDir: LIBRARY_DIR });
 
 const MIME = {
   ".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8",
@@ -174,7 +179,7 @@ function setExportRequest(id, value) {
     for (const [key] of oldest) exportRequests.delete(key);
   }
 }
-function beginExport(fps, name, projectId, requestId) {
+function beginExport(fps, name, projectId, requestId, cacheId) {
   const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fablecut-"));
   const videoPath = path.join(dir, "video.mp4");
@@ -195,7 +200,7 @@ function beginExport(fps, name, projectId, requestId) {
   proc.stdin.on("error", () => {}); // EPIPE if ffmpeg dies mid-stream; surfaced via exit code
   const sess = {
     proc, dir, videoPath, name: safeName(name || "export"), projectId, requestId,
-    wav: null, frames: 0, frameBytes: 0, err: () => stderr,
+    cacheId, wav: null, frames: 0, frameBytes: 0, err: () => stderr,
     done: new Promise((res) => proc.on("close", res)),
   };
   exportSessions.set(id, sess);
@@ -209,6 +214,15 @@ function cleanupExport(id) {
   try { s.proc.kill(); } catch {}
   try { fs.rmSync(s.dir, { recursive: true, force: true }); } catch {}
 }
+
+// Optimized encoding sessions share the cache lease; crashed tabs cannot leave
+// their encoder waiting forever on stdin. Legacy Fast sessions are unchanged.
+setInterval(() => {
+  for (const [id, s] of exportSessions) if (s.cacheId && !sourceCache.sessions.has(s.cacheId)) {
+    setExportRequest(s.requestId, { state: "error", projectId: s.projectId, error: "Optimized export session expired" });
+    cleanupExport(id);
+  }
+}, 15000).unref();
 
 /* Static file with HTTP Range support (required for <video> seeking) */
 function serveFile(req, res, filePath) {
@@ -349,9 +363,34 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  /* Optimized export source-cache sessions are project-scoped. */
+  if (p.startsWith("/api/export/cache/")) {
+    try {
+      if (!HAS_FFMPEG || !HAS_FFPROBE) throw new Error("Optimized export needs ffmpeg and ffprobe");
+      const pp = requestProject(url), id = url.searchParams.get("id");
+      if (p === "/api/export/cache/begin" && req.method === "POST") {
+        const body = JSON.parse((await readBody(req)).toString());
+        sendJSON(res, 200, { id: sourceCache.create(pp, body.revision) });
+      } else if (p === "/api/export/cache/status" && req.method === "GET") {
+        sendJSON(res, 200, sourceCache.status(id, pp.id));
+      } else if (p === "/api/export/cache/block" && req.method === "POST") {
+        const body = JSON.parse((await readBody(req)).toString());
+        sendJSON(res, 200, await sourceCache.block(id, pp.id, body.clipId, body.block, { priority: body.priority, neededAt: body.neededAt }));
+      } else if (p === "/api/export/cache/frame" && req.method === "GET") {
+        serveFile(req, res, sourceCache.frame(id, pp.id, url.searchParams.get("key"), Number(url.searchParams.get("index"))));
+      } else if (p === "/api/export/cache/drop" && req.method === "POST") {
+        const body = JSON.parse((await readBody(req)).toString());
+        sourceCache.drop(id, pp.id, body.clipIds); sendJSON(res, 200, { ok: true });
+      } else if (p === "/api/export/cache/release" && req.method === "POST") {
+        sourceCache.release(id, pp.id); sendJSON(res, 200, { ok: true });
+      } else { sendJSON(res, 404, { error: "unknown cache operation" }); }
+    } catch (e) { sendJSON(res, 400, { error: String(e.message || e) }); }
+    return;
+  }
+
   /* API: fast export (browser-rendered frames → ffmpeg encode) */
   if (p === "/api/export/ffmpeg" && req.method === "GET") {
-    sendJSON(res, 200, { available: HAS_FFMPEG });
+    sendJSON(res, 200, { available: HAS_FFMPEG, ffprobe: HAS_FFPROBE });
     return;
   }
   if (p === "/api/export/status" && req.method === "GET") {
@@ -379,7 +418,8 @@ const server = http.createServer(async (req, res) => {
     try {
       const pp = requestProject(url);
       const opts = JSON.parse((await readBody(req)).toString("utf8") || "{}");
-      sendJSON(res, 200, { id: beginExport(opts.fps || 30, opts.name, pp.id, opts.requestId) });
+      if (opts.engine === "optimized") sourceCache.get(opts.cacheId, pp.id);
+      sendJSON(res, 200, { id: beginExport(opts.fps || 30, opts.name, pp.id, opts.requestId, opts.engine === "optimized" ? opts.cacheId : undefined) });
     } catch (e) { sendJSON(res, 500, { error: String(e) }); }
     return;
   }
@@ -414,6 +454,9 @@ const server = http.createServer(async (req, res) => {
     if (!sess) { sendJSON(res, 404, { error: "no such export session" }); return; }
     try {
       if (url.searchParams.get("discard")) { cleanupExport(id); sendJSON(res, 200, { ok: true }); return; }
+      const finalizeStarted = Date.now();
+      const endBody = await readBody(req);
+      const metrics = endBody.length ? JSON.parse(endBody.toString()).metrics : undefined;
       if (!sess.frames) throw new Error("export received no video frames");
       sess.proc.stdin.end();
       const code = await sess.done;
@@ -431,10 +474,16 @@ const server = http.createServer(async (req, res) => {
       else
         await run("ffmpeg", ["-y", "-i", sess.videoPath, "-c", "copy",
           ...TAGS, "-movflags", "+faststart", out]);
+      if (metrics && typeof metrics === "object") {
+        metrics.phases ||= {}; metrics.phases.finalizeMs = Date.now() - finalizeStarted;
+        metrics.totalMs = (Number(metrics.totalMs) || 0) + metrics.phases.finalizeMs;
+        metrics.fps = sess.frames / (metrics.totalMs / 1000);
+        metrics.serverRssBytes = process.memoryUsage().rss;
+      }
       cleanupExport(id);
-      setExportRequest(sess.requestId, { state: "complete", projectId: pp.id,
+      setExportRequest(sess.requestId, { state: "complete", projectId: pp.id, metrics,
         src: "/projects/" + encodeURIComponent(pp.id) + "/exports/" + encodeURIComponent(path.basename(out)) });
-      sendJSON(res, 200, { ok: true, src: "/projects/" + encodeURIComponent(pp.id) + "/exports/" + encodeURIComponent(path.basename(out)) });
+      sendJSON(res, 200, { ok: true, metrics, src: "/projects/" + encodeURIComponent(pp.id) + "/exports/" + encodeURIComponent(path.basename(out)) });
     } catch (e) {
       const detail = `${String(e)} (frames=${sess.frames}, bytes=${sess.frameBytes})`;
       setExportRequest(sess.requestId, { state: "error", projectId: sess.projectId,

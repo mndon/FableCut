@@ -650,11 +650,84 @@ Realtime export, and `/api/export/begin` all use this value; pass the same
 ## Export
 
 Export can be started in the UI (Export button → dialog) or headlessly with
-`tik-editvideo-cli export --project <id> --output <file.mp4>`. Two engines: **Fast** (browser
+`tik-editvideo-cli export --project <id> --output <file.mp4>`. Three engines: **Fast** (browser
 renders each frame with the normal compositor — including SVG frames, keys and
 AI masks — streams JPEG frames + an offline WAV mix to the server, ffmpeg
 encodes a CRF-18 faststart MP4 into the project's `exports/`) and **Realtime**
-(MediaRecorder fallback). CLI export automatically starts the local server if needed and requires ffmpeg
+(MediaRecorder fallback), plus opt-in **Optimized** (see below). CLI export automatically starts the local server if needed and requires ffmpeg
 and Chrome or Chromium on the machine (override discovery with `--browser` or
 `CHROME_PATH`). It launches the editor headlessly and therefore uses the exact
 same compositor as preview instead of reimplementing the timeline in ffmpeg.
+
+### Optimized export (opt-in)
+
+The third UI engine, **Optimized (ffmpeg + frame cache)**, keeps Fast and
+Realtime unchanged, including their default selection. CLI users select it with
+`tik-editvideo-cli export --project <id> --engine optimized --output final.mp4`;
+`--engine fast` remains the default. Optimized additionally requires ffprobe.
+It uses the same compositor, SVG/AI preparation, offline audio mix, JPEG quality
+0.95, x264 CRF 18 and BT.709 output as Fast. Hardware encoding and parallel
+browser workers are not used.
+
+For local, ordinary SDR constant-frame-rate video at fixed playback speed,
+ffmpeg sequentially extracts original-resolution lossless PNGs in five-second
+source blocks, using up to two PNG encoding threads with unchanged lossless
+compression. Native display timestamps select frames, including subframe
+trims and fixed slow/fast motion; no project-FPS resampling is applied. Small
+PTS quantization jitter (up to max(2 ms, 10% of a frame interval)) is accepted
+without changing timestamps. Duplicate timestamps, large gaps and substantial
+variable frame rates use browser seeking. Unsupported frame timing is recorded
+once per source for the session, avoiding repeated extraction at every cut. HDR,
+variable/uncertain frame rates, unspecified color matrices, non-square pixels,
+rotated video, remote sources and speed ramps use browser seeking instead. Extraction failures or capacity
+limits also select the compatibility path and appear in export metrics.
+
+The project snapshot is frozen for export; a revision mismatch refuses cache
+initialization. Sources are resolved from registered project/library media only.
+Content hashes and extraction settings identify reusable blocks under each
+project's `.export-cache/` (not project JSON). The disk budget is 2 GiB, with
+LRU eviction of unleased blocks, including while an incoming block grows;
+decoded browser images have a 128 MiB budget
+(current-frame requirements may exceed it). Background read-ahead follows the
+output timeline: the next block of active clips and the opening blocks of up to
+three upcoming clips, including backward source jumps. One speculative request
+runs at a time. Future PNG prefetch skips unfinished blocks rather than waiting
+for their extraction on the current output frame. Cold exports can still wait
+when decoding cannot keep up; no frame is skipped to hide that wait.
+Uploads remain ordered with backpressure, capped at four JPEGs or 32 MiB
+(one oversized JPEG is transmitted alone). Where available, OffscreenCanvas
+encodes immutable snapshots in a dedicated worker at the same JPEG quality,
+avoiding main-page idle encoding. Older browsers retain Canvas encoding.
+Cancellation releases jobs; cache leases expire after 90 seconds
+without activity. Complete blocks remain available for subsequent exports.
+
+`GET /api/export/ffmpeg` now returns `{available, ffprobe}`. New project-scoped
+cache endpoints (`?project=<id>`, opaque session `id`):
+
+- `POST /api/export/cache/begin` `{revision}` → `{id}`; reads the saved project.
+- `GET /api/export/cache/status?id=` → `{state, clips, stats, error?}`; also renews
+  the lease. `state` is `preparing`, `ready`, or `error`.
+- `POST /api/export/cache/block?id=` `{clipId, block}` → native timestamp
+  manifest `{key,times,width,height,bytes}`, or `{fallback}`. Blocks are five
+  source seconds and must intersect the registered clip's source interval.
+- `GET /api/export/cache/frame?id=&key=&index=` → a leased PNG (zero-based index).
+- `POST /api/export/cache/drop?id=` `{clipIds}` releases completed clips' blocks.
+- `POST /api/export/cache/release?id=` releases the session, including pending
+  extraction jobs not shared with another session.
+
+Optimized passes `{engine:"optimized",cacheId}` in addition to existing export
+begin fields, linking the encoder lifetime to the cache lease. Export end
+accepts optional `{metrics}`; completion status and CLI output include these
+metrics (phase times, approximate P95 timing buckets, cache hits/misses and
+fallback reasons, buffer high-water marks, server RSS, total elapsed time and
+`cutSourceWait` timing at the first output frame of each clip).
+Existing Fast clients can continue sending an empty end body.
+
+Run `node --test tests/*.test.js` for regression tests. After syncing the CLI
+runtime, `FABLECUT_BROWSER_TEST=1 node --test tests/export-browser.test.js`
+compares real Fast/Optimized MP4s, including audio and frame counts. Add
+`FABLECUT_EXPORT_BENCH=1` for three cold/warm 60-second 1080p runs and a median
+speed comparison. Artifacts and metrics are written to an isolated temporary
+directory printed by the test. These tests need ffmpeg, ffprobe and Chrome
+(`CHROME_PATH` can override the test browser). Speed depends on source codec,
+effects and cache state; the name does not guarantee faster exports.

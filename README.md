@@ -179,6 +179,9 @@ same time.
 - Fast export: browser renders every frame + an offline audio mix, ffmpeg
   encodes a frame-accurate CRF-18 MP4 (keeps rendering if you switch tabs)
 - Realtime MediaRecorder fallback when ffmpeg isn't available
+- Opt-in **Optimized (ffmpeg + frame cache)**: native-timestamp source frame
+  caching and an ordered, bounded upload pipeline; requires ffmpeg + ffprobe.
+  Fast and Realtime remain available, with the existing defaults.
 
 ## Quick start
 
@@ -431,3 +434,36 @@ requests are still best filed as [GitHub issues](https://github.com/ronak-create
 ## License
 
 [MIT](LICENSE)
+
+### Optimized export
+
+Select **Optimized (ffmpeg + frame cache)** in Export, or run:
+
+```bash
+tik-editvideo-cli export --project my-edit --engine optimized --output ./final.mp4
+```
+
+`--engine fast` remains the CLI default. Optimized uses the same browser
+compositor, offline audio mix and output settings as Fast. It pre-decodes local
+SDR constant-frame-rate video into five-second, lossless PNG cache blocks,
+selecting native display timestamps for fixed-speed clips. Small millisecond
+timestamp jitter is accepted without rounding frames to an ideal grid.
+Read-ahead prepares upcoming cuts as well as the active clip; future-frame
+prefetch never waits for an unfinished source block on the current frame.
+Unsupported or
+uncertain sources (including HDR, substantial variable frame rate, unspecified color matrices, rotation, non-square
+pixels and speed ramps) retain browser seeking; cache failures also fall back.
+No project schema changes, new npm dependencies or hardware encoder are needed.
+
+Reusable, content-addressed source frames live in each project's `.export-cache/`
+with a 2 GiB disk budget and LRU eviction of unused blocks during extraction.
+Decoded images have
+a 128 MiB budget, allowing current-frame requirements to exceed it. JPEG uploads
+stay ordered and bounded at four frames or 32 MiB. Completed caches survive
+exports; cancelled and expired sessions release their workers and leases.
+
+The UI shows export phases and completion time. CLI results add `metrics` with
+phase timings, cache hits/misses, compatibility fallback reasons, resource
+high-water marks and total time. Initial preparation can outweigh the benefit
+on short projects; repeat exports reuse source frames. See [CLAUDE.md](CLAUDE.md#optimized-export-opt-in)
+for cache API details and reproducible browser/performance tests.

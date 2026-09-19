@@ -256,6 +256,7 @@ const state = {
   viewZoom: 1,           // program-monitor display zoom (1 = fit stage)
   audioHold: false,      // while paused, loop one frame of audio at the playhead
   ffmpeg: false,         // server reports ffmpeg available
+  ffprobe: false,        // required only for Optimized source-frame caching
   dirtyTimeline: true, gesture: false,
   workAreaPlay: false,   // when true, play + Home/End stay inside IN/OUT
   binTab: "project",     // project | elements | sfx | svg
@@ -490,7 +491,7 @@ async function connectServer() {
     els.projectName.textContent = "🟢 connected";
     listenSSE();
     fetch("/api/export/ffmpeg").then((r) => r.json())
-      .then((j) => { state.ffmpeg = !!j.available; }).catch(() => { });
+      .then((j) => { state.ffmpeg = !!j.available; state.ffprobe = !!j.ffprobe; }).catch(() => { });
   } catch {
     state.connected = false;
     els.projectName.textContent = "⚪ local session";
@@ -4298,7 +4299,7 @@ function requestMask(clipId, el, force = false) {
   if (!force && bgSeg.pending > 0) return Promise.resolve();
   bgSeg.pending++;
   bgSeg.queue = bgSeg.queue.then(async () => {
-    if ((el.videoWidth || el.naturalWidth || 0) === 0) return;
+    if ((el.videoWidth || el.naturalWidth || el.width || 0) === 0) return;
     bgSeg.currentClip = clipId;
     try { await bgSeg.seg.send({ image: el }); } catch { }
   }).finally(() => { bgSeg.pending--; });
@@ -4760,8 +4761,9 @@ function drawClip(c, W, H, t) {
     src = getSvgImage(c, t);
     if (src) { sw = src.naturalWidth || src.width; sh = src.naturalHeight || src.height; }
   } else if (c.kind === "video") {
-    src = getClipEl(c);
-    if (src && !src.seeking && src.readyState >= 2) { sw = src.videoWidth; sh = src.videoHeight; }
+    src = optimizedSources?.get(c.id) || getClipEl(c);
+    if (optimizedSources?.has(c.id)) { sw = src.naturalWidth || src.width; sh = src.naturalHeight || src.height; }
+    else if (src && !src.seeking && src.readyState >= 2) { sw = src.videoWidth; sh = src.videoHeight; }
   }
   if (src && sw && sh) {
     // source crop (percent per edge)
@@ -4782,7 +4784,7 @@ function drawClip(c, W, H, t) {
       ctx2d.roundRect(-dw / 2, -dh / 2, dw, dh, Math.min(+p.cornerRadius, dw / 2, dh / 2));
       ctx2d.clip();
     }
-    if (p.bgRemove && c.kind === "video") requestMask(c.id, src); // refresh person mask
+    if (p.bgRemove && c.kind === "video" && !optimizedSources) requestMask(c.id, src); // refresh person mask
     if (p.bgRemove && c.kind === "image" && !bgSeg.masks.get(c.id)) requestMask(c.id, src);
     ctx2d.filter = buildFilter(p);
     if (needsPixelPass(p, c)) {
@@ -5383,6 +5385,11 @@ function openExportSetup() {
   els.engineFast.disabled = !fastOk;
   els.engineFast.checked = fastOk;
   els.engineRealtime.checked = !fastOk;
+  $("engineOptimized").checked = false;
+  $("engineOptimized").disabled = !(fastOk && state.ffprobe);
+  $("engineOptimizedNote").textContent = fastOk && state.ffprobe
+    ? "Pre-decodes video frames and caches them. First export needs preparation; you can switch tabs."
+    : "Needs the server + ffmpeg and ffprobe on PATH.";
   $("engineFastNote").textContent = fastOk
     ? "Frame-accurate ffmpeg encode. Keeps rendering if you switch tabs."
     : "Needs the server + ffmpeg on PATH.";
@@ -5404,7 +5411,8 @@ function openExportSetup() {
 }
 function startChosenExport() {
   els.exportSetup.classList.add("hidden");
-  if (els.engineFast.checked && !els.engineFast.disabled) fastExport();
+  if ($("engineOptimized").checked && !$("engineOptimized").disabled) optimizedExport();
+  else if (els.engineFast.checked && !els.engineFast.disabled) fastExport();
   else startExport();
 }
 
@@ -5519,8 +5527,8 @@ async function prepareFrameAssets(t) {
     if (!activeAt(c, t) || !isTrackEnabled(c.track)) continue;
     if (c.kind === "svg") await prepareSvgFrame(c, t);
     if (c.props?.bgRemove && (c.kind === "video" || c.kind === "image")) {
-      const el = c.kind === "video" ? getClipEl(c) : runtime.mediaAux.get(c.mediaId)?.img;
-      if (el) { try { await requestMask(c.id, el, true); } catch { } }
+      const el = c.kind === "video" ? (optimizedSources?.get(c.id) || getClipEl(c)) : runtime.mediaAux.get(c.mediaId)?.img;
+      if (el) { try { await requestMask(c.id, optimizedSources?.has(c.id) ? optimizedMaskSource(el) : el, true); } catch { } }
     }
   }
 }
@@ -5666,7 +5674,7 @@ $("btnExport").addEventListener("click", openExportSetup);
 $("btnStartExport").addEventListener("click", startChosenExport);
 $("btnCancelSetup").addEventListener("click", () => els.exportSetup.classList.add("hidden"));
 $("btnCancelExport").addEventListener("click", () => {
-  if (state.rendering) renderCancelled = true;
+  if (state.rendering) { renderCancelled = true; optimizedAbort?.abort(); }
   else finishExport(false);
 });
 $("btnPlay").addEventListener("click", () => state.playing ? pause() : play());
@@ -6222,7 +6230,7 @@ connectServer().then(async () => {
   const requestId = params.get("cliExport");
   if (state.connected && /^[a-f0-9]{32}$/.test(requestId || "")) {
     await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-    await fastExport({ requestId, name: params.get("cliExportName") || undefined });
+    await (params.get("cliExportEngine") === "optimized" ? optimizedExport : fastExport)({ requestId, name: params.get("cliExportName") || undefined });
   }
 });
 requestAnimationFrame(loop);

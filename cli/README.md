@@ -114,3 +114,16 @@ npm install -g ./tik-editvideo-cli-1.7.0.tgz
 ```bash
 npm unlink -g tik-editvideo-cli
 ```
+
+### Optimized 导出
+
+```bash
+tik-editvideo-cli export --project product-reel --engine optimized --output ./final.mp4
+```
+
+默认仍为 `--engine fast`。新增方式需要 ffmpeg、ffprobe 和 Chrome/Chromium，
+使用与预览相同的合成器，缓存普通本地 SDR 固定帧率视频的素材帧，并按顺序流水线上传。
+变速曲线、HDR 等未验证素材继续使用浏览器定位；缓存容量不足或抽帧失败也会回退。
+输出 JSON 附加 `metrics`，包含阶段耗时、缓存命中、兼容回退原因和资源使用统计。
+缓存位于项目 `.export-cache/`，磁盘预算为 2 GiB；第二次导出可复用，
+首次准备成本可能使短项目收益有限。原 Fast 和浏览器 Realtime 不受影响。
