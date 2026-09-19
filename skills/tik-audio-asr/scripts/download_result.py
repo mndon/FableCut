@@ -8,7 +8,10 @@ from pathlib import Path
 from urllib.error import URLError
 from urllib.request import urlopen
 
-from transcribe import ToolError, validate_json_url, validate_editor_result
+from transcribe import (
+    ToolError, ssl_context as download_ssl_context,
+    validate_json_url, validate_editor_result,
+)
 
 
 def download_result(url, output):
@@ -17,7 +20,7 @@ def download_result(url, output):
     if path.exists():
         raise ToolError("FILE_EXISTS", "目标文件已存在，请复用或选择新路径")
     try:
-        with urlopen(url, timeout=60) as response:
+        with urlopen(url, timeout=60, context=download_ssl_context()) as response:
             body = response.read()
     except (URLError, OSError, http.client.HTTPException) as exc:
         raise ToolError("DOWNLOAD_FAILED", "ASR JSON 下载失败，请检查链接是否可访问") from exc

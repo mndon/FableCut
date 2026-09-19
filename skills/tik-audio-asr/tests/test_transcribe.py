@@ -5,17 +5,18 @@ import io
 import json
 import os
 import shutil
+import ssl
 import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import ANY, patch
 from urllib.error import HTTPError
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 import transcribe as asr
-from download_result import download_result
+from download_result import download_result, download_ssl_context
 
 
 RESULT = {"rich_result": {"duration": 1000, "sentences": [
@@ -103,12 +104,14 @@ class MediaTests(unittest.TestCase):
 
 class TranscribeTests(unittest.TestCase):
     def setUp(self):
+        stack = contextlib.ExitStack()
+        self.addCleanup(stack.close)
         self.requests = []
         self.detail = {"parse_status": 3, **copy.deepcopy(RESULT)}
-        self.client = self.enterContext(patch.object(asr, "TikAiClient")).return_value
+        self.client = stack.enter_context(patch.object(asr, "TikAiClient")).return_value
         self.client.api_request.side_effect = self.api_request
-        self.enterContext(patch.object(asr, "load_config", return_value="synthetic-test-key"))
-        self.enterContext(patch.object(asr, "read_metadata", return_value=asr.AudioMetadata(
+        stack.enter_context(patch.object(asr, "load_config", return_value="synthetic-test-key"))
+        stack.enter_context(patch.object(asr, "read_metadata", return_value=asr.AudioMetadata(
             Path("/synthetic.wav"), 1.0, 100, ".wav", "synthetic-md5")))
 
     def api_request(self, path, method, payload=None):
@@ -221,7 +224,10 @@ class DownloadTests(unittest.TestCase):
         raw = json.dumps(RESULT, ensure_ascii=False, indent=2).encode("utf-8") + b"\n"
         with patch("download_result.urlopen", return_value=io.BytesIO(raw)) as request:
             result = download_result(RESULT_URL, self.output)
-            request.assert_called_once_with(RESULT_URL, timeout=60)
+            request.assert_called_once_with(RESULT_URL, timeout=60, context=ANY)
+            context = request.call_args.kwargs["context"]
+            self.assertEqual(context.verify_mode, ssl.CERT_NONE)
+            self.assertFalse(context.check_hostname)
         self.assertEqual(result["path"], str(self.output.resolve()))
         self.assertEqual(self.output.read_bytes(), raw)
         with patch("download_result.urlopen") as request, self.assertRaises(asr.ToolError):
@@ -255,6 +261,14 @@ class DownloadTests(unittest.TestCase):
         self.assertEqual(error.exception.code, "DOWNLOAD_FAILED")
         self.assertNotIn(RESULT_URL, error.exception.message)
         self.assertFalse(self.output.exists())
+
+    def test_download_disables_verification_with_ca_environment(self):
+        for variable in ("SSL_CERT_FILE", "SSL_CERT_DIR"):
+            with self.subTest(variable=variable), \
+                    patch.dict(os.environ, {variable: "/custom/ca"}, clear=True):
+                context = download_ssl_context()
+                self.assertEqual(context.verify_mode, ssl.CERT_NONE)
+                self.assertFalse(context.check_hostname)
 
 
 if __name__ == "__main__":
