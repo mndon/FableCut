@@ -154,9 +154,7 @@ port or another workspace is an error. `GET /api/status` reports the service
 identity (`service: "fablecut"`), `pid`, and actual `dataDir` for this check.
 Use `--host` / `--port` (or `HOST` / `PORT`) to configure the server; defaults are
 `127.0.0.1:7777`. `server start` still runs the editor/API server in the foreground.
-`export` automatically ensures the same local server is ready. Remote CLI editing
-via `--url` / `FABLECUT_URL` is no longer supported and produces a migration error;
-`FABLECUT_TOKEN` is no longer used by the CLI.
+`export` automatically ensures the same local server is ready.
 
 `import-media` copies a local file into the project's media directory and
 registers it. When ffprobe is available it also records duration and dimensions;

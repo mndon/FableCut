@@ -273,8 +273,6 @@ Export automatically starts the local service and uses the same browser
 compositor as preview. It requires ffmpeg and Chrome/Chromium; use `--browser`
 or `CHROME_PATH` to select a browser. The package has no npm runtime dependencies
 and serves its bundled runtime independently of the source checkout.
-Remote editing via `--url` / `FABLECUT_URL` is no longer supported; unset old URL
-configuration before using the CLI. Bearer credentials are no longer used.
 
 The `tik-edit-video` skill delivers a preview link after verification and invites
 adjustments. It exports only on an explicit request, such as “导出最终视频”.

@@ -17,7 +17,7 @@ async function port(t, handler = (_req, res) => { res.end("not fablecut"); }) {
 test("offline multi-project edits, concurrent patches, conflict protection and fixed home", async t => {
   const { run, home, dataDir } = fixture(t);
   const trap = await port(t, () => assert.fail("editing must not send HTTP requests"));
-  const invoke = args => run(args, { PORT: String(trap.port) });
+  const invoke = args => run(args, { PORT: String(trap.port), FABLECUT_URL: `http://127.0.0.1:${trap.port}` });
   const projects = await Promise.all([invoke(["create-project", "--name", "A", "--id", "a"]), invoke(["create-project", "--name", "B", "--id", "b"])]);
   assert.deepEqual(projects.map(json).map(p => p.id).sort(), ["a", "b"]);
   const initial = json(await invoke(["get-project", "--project", "a"]));
@@ -34,7 +34,7 @@ test("offline multi-project edits, concurrent patches, conflict protection and f
   assert.ok(!fs.existsSync(path.join(home, "ignored")));
   assert.ok(!fs.existsSync(path.join(dataDir, "server.log")));
   assert.notEqual((await run(["list-projects", "--data-dir", home])).code, 0);
-  assert.notEqual((await run(["list-projects"], { FABLECUT_URL: "http://example.invalid" })).code, 0);
+  assert.deepEqual(json(await invoke(["list-projects"])), json(await run(["list-projects"])));
   assert.notEqual((await run(["get-project", "--project", "missing"])).code, 0);
   assert.notEqual((await run(["get-project", "--project", "../escape"])).code, 0);
   const duplicates = (await Promise.all([run(["create-project", "--name", "same"]), run(["create-project", "--name", "same"])] )).map(json);
@@ -43,6 +43,33 @@ test("offline multi-project edits, concurrent patches, conflict protection and f
   const imported = (await Promise.all([run(["import-media", "--project", "b", "--path", source]), run(["import-media", "--project", "b", "--path", source])])).map(json);
   assert.equal(new Set(imported.map(p => p.media.src)).size, 2);
   assert.equal(json(await run(["get-project", "--project", "b"])).media.length, 2);
+});
+
+test("status ignores legacy URL when starting and reusing the local server", async t => {
+  for (const projectArgs of [[], ["--project", "preview"]]) {
+    await t.test(projectArgs.length ? "with project" : "without project", async t => {
+      const { run, dataDir } = fixture(t);
+      const trap = await port(t, () => assert.fail("legacy URL must not receive HTTP requests"));
+      const legacyEnv = { FABLECUT_URL: `http://127.0.0.1:${trap.port}` };
+      const spare = await port(t); const p = spare.port;
+      await new Promise(resolve => spare.server.close(resolve));
+      if (projectArgs.length) json(await run(["create-project", "--name", "Preview", "--id", "preview"], legacyEnv));
+      const args = ["status", ...projectArgs, "--port", String(p)];
+      const result = await run(args, legacyEnv);
+      const status = json(result);
+      t.after(async () => { try { process.kill(status.pid); } catch {} await new Promise(resolve => setTimeout(resolve, 200)); });
+      assert.equal(result.stderr, "");
+      assert.equal(status.ok, true);
+      assert.equal(status.started, true);
+      assert.equal(status.dataDir, fs.realpathSync(dataDir));
+      assert.equal(status.url, `http://127.0.0.1:${p}/`);
+      assert.equal(status.projectId, projectArgs.length ? "preview" : undefined);
+      assert.equal(status.projectUrl, projectArgs.length ? status.url + "?project=preview" : undefined);
+      const reused = await run(args, legacyEnv);
+      assert.equal(reused.stderr, "");
+      assert.deepEqual(json(reused), { ...status, started: false });
+    });
+  }
 });
 
 test("status starts one persistent server, verifies workspace, and refreshes browser clients", async t => {

@@ -280,7 +280,9 @@ async function exportProject(client, options) {
   url.searchParams.set("cliExportName", name);
   url.searchParams.set("cliExportEngine", engine);
   // HEVC playback in Chrome requires hardware decoding. Do not disable the GPU.
-  const chrome = spawn(browserPath, ["--headless=new", "--no-first-run", "--no-default-browser-check", "--autoplay-policy=no-user-gesture-required", "--disable-background-timer-throttling", "--disable-renderer-backgrounding", "--user-data-dir=" + profile, "--window-size=1440,1000", url.href], { stdio: ["ignore", "ignore", "pipe"] });
+  // The disposable export profile must not prompt for the user's macOS keychain.
+  const keychainArgs = process.platform === "darwin" ? ["--use-mock-keychain"] : [];
+  const chrome = spawn(browserPath, ["--headless=new", "--no-first-run", "--no-default-browser-check", ...keychainArgs, "--autoplay-policy=no-user-gesture-required", "--disable-background-timer-throttling", "--disable-renderer-backgrounding", "--user-data-dir=" + profile, "--window-size=1440,1000", url.href], { stdio: ["ignore", "ignore", "pipe"] });
   let launchError;
   chrome.on("error", (error) => { launchError = error; });
   const closed = new Promise((resolve) => chrome.once("close", resolve));
@@ -336,8 +338,6 @@ async function main(argv = process.argv.slice(2)) {
   const command = positionals[0];
   if (!command || command === "help" || options.help) { printHelp(); return; }
   if (options["data-dir"] !== undefined) throw new CliError("--data-dir is no longer supported; storage is fixed at ~/.tik-editvideo-cli");
-  if (options.url !== undefined || process.env.FABLECUT_URL?.trim())
-    throw new CliError("Remote editing (--url / FABLECUT_URL) is no longer supported; unset FABLECUT_URL to use local projects");
   const commands = ["server", "status", "list-projects", "create-project", "get-project", "patch-project", "set-project", "import-media", "export"];
   if (!commands.includes(command)) throw new CliError("Unknown command: " + command + " (run tik-editvideo-cli --help)");
   if (command === "server" && positionals[1] !== "start") throw new CliError("Use: tik-editvideo-cli server start");

@@ -42,7 +42,8 @@ test("packaged runtime exports Fast and Optimized with matching frames", { skip:
   async function render(engine, run) {
     const id = require("node:crypto").randomBytes(16).toString("hex");
     const url = `${base}/?project=check&cliExport=${id}&cliExportEngine=${engine}&cliExportName=${engine}-${run}`;
-    const child = spawn(browser, ["--headless=new", "--no-first-run", "--no-default-browser-check", "--autoplay-policy=no-user-gesture-required", "--disable-background-timer-throttling", "--disable-renderer-backgrounding", "--user-data-dir=" + path.join(dir, "chrome-" + id), url], { stdio: ["ignore", "ignore", "pipe"] });
+    const keychainArgs = process.platform === "darwin" ? ["--use-mock-keychain"] : [];
+    const child = spawn(browser, ["--headless=new", "--no-first-run", "--no-default-browser-check", ...keychainArgs, "--autoplay-policy=no-user-gesture-required", "--disable-background-timer-throttling", "--disable-renderer-backgrounding", "--user-data-dir=" + path.join(dir, "chrome-" + id), url], { stdio: ["ignore", "ignore", "pipe"] });
     const start = Date.now(); let stderr = "", status;
     child.stderr.on("data", d => { stderr = (stderr + d).slice(-1000); });
     try {
