@@ -9,6 +9,24 @@ No build step, no npm dependencies.
 the `fablecut_docs` MCP tool, which returns it) has everything needed to fully
 drive the editor.
 
+## Editor language and layout
+
+The editor defaults to Simplified Chinese and the **S** timeline density.
+Open the top-bar **Settings / 设置** button and choose **Interface language /
+界面语言** to switch immediately between `zh-CN` and `en`. The choice is saved
+in this browser's `localStorage` under `fablecut-settings`, alongside the
+optional timeline/Project-bin selection-link preference. Saved S/M/L density
+preferences remain in effect; **Reset layout** restores S.
+
+Language is a UI preference, not project data. Switching it must not change
+project/media names, caption content, font families, enum values, or compositor
+output. `i18n.js` uses English source strings as translation keys and fallback;
+add Chinese entries there when adding UI text. Mark static text/attributes with
+`data-i18n` / `data-i18n-title` / `data-i18n-aria-label` /
+`data-i18n-placeholder`; use `uiText()` for dynamic text and `uiAttr()` for
+translated HTML attributes. Keep select option values canonical when translating
+their labels. The CLI runtime package includes the same language resources.
+
 ## MCP connection (preferred — works from any session, any directory)
 
 Register the MCP server (`mcp-server.js`) once at user scope as `fablecut`:

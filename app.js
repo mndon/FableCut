@@ -6,6 +6,9 @@
    ═══════════════════════════════════════════════════════════════════════════ */
 "use strict";
 
+const uiText = (message, values) => FableCutI18n.text(message, values);
+const uiAttr = (message, values) => escapeHtml(uiText(message, values));
+
 /* ── Constants ─────────────────────────────────────────────────────────── */
 const TRACKS = [
   { id: "V3", kind: "video", h: 44, color: "#ffd166" },
@@ -155,7 +158,7 @@ function ensureAudioTrackCount(need) {
   while (AUDIO_TRACK_IDS.length < need) {
     const n = AUDIO_TRACK_IDS.length + 1;
     const id = "A" + n;
-    const preset = TRACK_SIZE_PRESETS[state.trackSize] || TRACK_SIZE_PRESETS.l;
+    const preset = TRACK_SIZE_PRESETS[state.trackSize] || TRACK_SIZE_PRESETS.s;
     TRACKS.push({ id, kind: "audio", h: preset.h.A1 || 42, color: palette[(n - 1) % palette.length] });
     TRACK_IDS.add(id);
     AUDIO_TRACK_IDS.push(id);
@@ -202,6 +205,7 @@ function addLiveAudioTrackBuses(ids) {
 /* ── User settings (localStorage; optional behavior toggles) ── */
 const SETTINGS_KEY = "fablecut-settings";
 const DEFAULT_SETTINGS = {
+  language: "zh-CN",
   linkSelect: false, // timeline ↔ project bin selection sync
 };
 let settings = { ...DEFAULT_SETTINGS };
@@ -213,6 +217,8 @@ function loadSettings() {
     for (const k of Object.keys(DEFAULT_SETTINGS)) {
       if (Object.hasOwn(raw, k)) next[k] = raw[k];
     }
+    next.language = FableCutI18n.normalize(next.language);
+    next.linkSelect = !!next.linkSelect;
     settings = next;
   } catch {
     settings = { ...DEFAULT_SETTINGS };
@@ -249,7 +255,7 @@ const state = {
   previewRate: 1,        // playback speed for PREVIEW only — never affects export
   selId: null,           // primary selection (drives the inspector)
   selIds: new Set(),     // full multi-selection (includes selId)
-  trackSize: "l",        // s | m | l — timeline track density preset
+  trackSize: "s",        // s | m | l — timeline track density preset
   connected: false, exporting: false,
   rendering: false,      // fast (server/ffmpeg) export in progress
   guides: false,         // safe-area overlay on the monitor
@@ -281,7 +287,7 @@ function syncTrackDisabledUI(id) {
     const btn = head.querySelector(".track-toggle");
     if (btn) {
       btn.setAttribute("aria-pressed", on ? "true" : "false");
-      btn.title = on ? "Disable track" : "Enable track";
+      btn.title = on ? uiText("Disable track") : uiText("Enable track");
     }
   }
   if (row) row.classList.toggle("disabled", !on);
@@ -468,7 +474,7 @@ function openProject(id) {
 }
 els.projectSelect.addEventListener("change", () => openProject(els.projectSelect.value));
 els.btnNewProject.addEventListener("click", async () => {
-  const name = prompt("Project name", "Untitled Project");
+  const name = prompt(uiText("Project name"), uiText("Untitled Project"));
   if (name == null || !name.trim()) return;
   try {
     const res = await fetch("/api/projects", {
@@ -478,7 +484,7 @@ els.btnNewProject.addEventListener("click", async () => {
     const created = await res.json();
     if (!res.ok) throw new Error(created.error || "create failed");
     openProject(created.id);
-  } catch (e) { alert("Couldn't create project: " + e.message); }
+  } catch (e) { alert(uiText("Couldn't create project: ") + e.message); }
 });
 async function connectServer() {
   try {
@@ -488,13 +494,13 @@ async function connectServer() {
     const data = await res.json();
     applyProject(data);
     state.connected = true;
-    els.projectName.textContent = "🟢 connected";
+    els.projectName.textContent = uiText("🟢 connected");
     listenSSE();
     fetch("/api/export/ffmpeg").then((r) => r.json())
       .then((j) => { state.ffmpeg = !!j.available; state.ffprobe = !!j.ffprobe; }).catch(() => { });
   } catch {
     state.connected = false;
-    els.projectName.textContent = "⚪ local session";
+    els.projectName.textContent = uiText("⚪ local session");
   }
   await probeMissingMeta();
 }
@@ -700,7 +706,7 @@ function scheduleSave() {
       if (res.status === 409) {
         // an external tool saved a newer revision while this change was pending
         await syncFromServer(true);
-        toast("Project was updated externally — your last change may need redoing.");
+        toast(uiText("Project was updated externally — your last change may need redoing."));
       }
     } catch { }
   }, 400);
@@ -749,7 +755,7 @@ async function syncFromServer(force) {
     if (!force && (data.revision || 0) === (project.revision || 0)) return; // our own save
     if (runtime.saveTimer) { // unsaved local edit vs. external write: external wins, tell the user
       clearTimeout(runtime.saveTimer); runtime.saveTimer = null;
-      toast("Project was updated externally — your last change may need redoing.");
+      toast(uiText("Project was updated externally — your last change may need redoing."));
     }
     applyProject(data);
     await probeMissingMeta();
@@ -925,9 +931,9 @@ async function importFiles(fileList) {
   }
   renderBin(); scheduleSave();
   if (!added && skipped)
-    toast("Couldn't import — unsupported or unreadable file type");
+    toast(uiText("Couldn't import — unsupported or unreadable file type"));
   else if (skipped)
-    toast(`Imported ${added}, skipped ${skipped}`);
+    toast(uiText("Imported {added}, skipped {skipped}", { added, skipped }));
   return addedMedia;
 }
 
@@ -1003,9 +1009,9 @@ function renderBin() {
       <div class="bin-thumb"></div>
       <div class="bin-meta">
         <div class="bin-name"></div>
-        <div class="bin-sub">${m.kind}${m.duration ? " · " + fmt(m.duration) : ""}</div>
+        <div class="bin-sub">${uiText(m.kind)}${m.duration ? " · " + fmt(m.duration) : ""}</div>
       </div>
-      <span class="bin-del" title="Remove (and its clips)">✕</span>`;
+      <span class="bin-del" title="${uiAttr("Remove (and its clips)")}">✕</span>`;
     const thumbEl = item.querySelector(".bin-thumb");
     if (thumbSrc) thumbEl.style.backgroundImage = `url(${JSON.stringify(thumbSrc)})`;
     else thumbEl.textContent = icon;
@@ -1052,12 +1058,12 @@ function renderBin() {
       row.style.setProperty("--bin-depth", depth);
       const count = mediaInFolder(f.id).length + folderChildren(f.id).length;
       row.innerHTML = `
-        <button type="button" class="bin-folder-twist" title="${f.open ? "Collapse" : "Expand"}" aria-expanded="${f.open}">${f.open ? "▼" : "▶"}</button>
+        <button type="button" class="bin-folder-twist" title="${f.open ? uiText("Collapse") : uiText("Expand")}" aria-expanded="${f.open}">${f.open ? "▼" : "▶"}</button>
         <span class="bin-folder-icon">📁</span>
         <span class="bin-folder-name"></span>
         <span class="bin-folder-count">${count}</span>
-        <button type="button" class="bin-folder-add" title="New subfolder">+</button>
-        <button type="button" class="bin-del bin-folder-del" title="Delete folder (keeps media)">✕</button>`;
+        <button type="button" class="bin-folder-add" title="${uiAttr("New subfolder")}">+</button>
+        <button type="button" class="bin-del bin-folder-del" title="${uiAttr("Delete folder (keeps media)")}">✕</button>`;
       const nameEl = row.querySelector(".bin-folder-name");
       nameEl.textContent = f.name;
       nameEl.title = f.name;
@@ -1105,7 +1111,7 @@ function renderBin() {
   // Root drop zone at the bottom so items can be moved out of folders
   const root = document.createElement("div");
   root.className = "bin-drop-root";
-  root.textContent = "Drop here to move to root";
+  root.textContent = uiText("Drop here to move to root");
   bindFolderDropTarget(root, null);
   els.binList.appendChild(root);
   syncBinSelectionFromTimeline();
@@ -1168,7 +1174,7 @@ function mediaForLibraryItem(f) {
 }
 async function addLibraryItem(f, trackId, at) {
   const m = mediaForLibraryItem(f);
-  if (!m) { toast("Unsupported file type: " + f.name); return; }
+  if (!m) { toast(uiText("Unsupported file type: ") + f.name); return; }
   if ((m.kind === "audio" || m.kind === "video") && (m.duration == null || isNaN(m.duration))) {
     try { await loadMediaMetadata(m); } catch { }
     ensureWave(m);
@@ -1194,7 +1200,7 @@ function toggleSfxPreview(f, btn) {
   const a = new Audio(f.src);
   a.dataset.src = f.src;
   a.onended = () => { btn.textContent = "▶"; };
-  a.play().catch(() => toast("Couldn't play " + f.name));
+  a.play().catch(() => toast(uiText("Couldn't play ") + f.name));
   btn.textContent = "⏸";
   runtime.sfxPreview = a;
 }
@@ -1206,8 +1212,8 @@ function renderLibrary() {
   if (!files.length) {
     els.libList.innerHTML = `<div class="bin-empty">
       <div class="bin-empty-icon">${dir === "sfx" ? "🔊" : dir === "svg" ? "✨" : "🧩"}</div>
-      <p>No assets yet.</p>
-      <p class="hint">Drop files into<br><b>library/${dir}/</b><br>— this list live-updates.</p></div>`;
+      <p>${uiText("No assets yet.")}</p>
+      <p class="hint">${uiText("Drop files into")}<br><b>library/${dir}/</b><br>${uiText("— this list live-updates.")}</p></div>`;
     return;
   }
   for (const f of files) {
@@ -1223,8 +1229,8 @@ function renderLibrary() {
         <div class="bin-name"></div>
         <div class="bin-sub">${(f.size / 1024).toFixed(0)} KB</div>
       </div>
-      ${dir === "sfx" ? `<button class="btn tiny lib-play" title="Preview">▶</button>` : ""}
-      <button class="btn tiny accent lib-add" title="Add at playhead">＋</button>`;
+      ${dir === "sfx" ? `<button class="btn tiny lib-play" title="${uiAttr("Preview")}">▶</button>` : ""}
+      <button class="btn tiny accent lib-add" title="${uiAttr("Add at playhead")}">＋</button>`;
     const thumbEl = item.querySelector(".bin-thumb");
     if (visual) thumbEl.style.backgroundImage = `url(${JSON.stringify(f.src)})`;
     else thumbEl.textContent = icon;
@@ -1439,13 +1445,13 @@ async function reconcileAudioChannels(videoClip) {
   state.dirtyTimeline = true;
   scheduleSave(); renderInspector();
   if (chCount > AUDIO_TRACK_IDS.length)
-    toast(`${m.name}: ${chCount} audio channels, only ${MAX_AUDIO_TRACKS} tracks supported — extra channel(s) dropped`);
+    toast(uiText("{name}: {count} audio channels, only {max} tracks supported — extra channels dropped", { name: m.name, count: chCount, max: MAX_AUDIO_TRACKS }));
   else if (added)
     toast(newTracks
-      ? `${m.name}: added ${newTracks} audio track${newTracks === 1 ? "" : "s"} and linked ${wantCh} channels`
-      : `Linked ${wantCh} audio channel${wantCh === 1 ? "" : "s"} from ${m.name}`);
+      ? uiText("{name}: added {tracks} audio tracks and linked {channels} channels", { name: m.name, tracks: newTracks, channels: wantCh })
+      : uiText("Linked {count} audio channels from {name}", { count: wantCh, name: m.name }));
   else if (removed)
-    toast(`${m.name} has fewer channels — removed ${removed} linked audio clip(s)`);
+    toast(uiText("{name} has fewer channels — removed {count} linked audio clips", { name: m.name, count: removed }));
 }
 /* Apply a named title style: reset the props a style owns, merge the style,
    place it (canvas-aware), and make sure its fonts are loaded.
@@ -1491,7 +1497,7 @@ function openStylePicker(anchor, c) {
     ensureFont(v.props.font); // so the entry itself renders in the style's face
     const it = document.createElement("div");
     it.className = "style-opt" + (c.styleName === k ? " on" : "");
-    it.textContent = v.label;
+    it.textContent = uiText(v.label);
     it.style.fontFamily = `"${v.props.font}", sans-serif`;
     if (v.props.uppercase) it.style.textTransform = "uppercase";
     it.addEventListener("mouseenter", () => {
@@ -1555,7 +1561,7 @@ function replaceClipMedia(clip, media) {
   if (clip.kind === "video") reconcileAudioChannels(clip); // add/drop A3+ channel clips once decoded
   state.dirtyTimeline = true;
   scheduleSave(); renderInspector();
-  toast(trimmed ? "Media replaced — trimmed to fit shorter source" : "Media replaced");
+  toast(trimmed ? uiText("Media replaced — trimmed to fit shorter source") : uiText("Media replaced"));
 }
 /* A dedicated, lazily-created file input for the "Browse file…" replace
    action — deliberately NOT the shared #fileInput (also driven by the global
@@ -1584,7 +1590,7 @@ function pickReplacementFile(clip) {
       if (!c || !added.length) return;
       const m = added.find((x) => x.kind === c.kind) || added[0];
       if (m.kind === c.kind) replaceClipMedia(c, m);
-      else toast(`Imported, but can't replace a ${c.kind} clip with ${m.kind === "audio" ? "an" : "a"} ${m.kind}`);
+      else toast(uiText("Imported, but cannot replace {kind} with {replacement}", { kind: uiText(c.kind), replacement: uiText(m.kind) }));
     });
   }
   replaceFileTargetId = clip.id;
@@ -1600,7 +1606,7 @@ function openMediaPicker(anchor, c) {
   menu.className = "style-menu";
   const browse = document.createElement("div");
   browse.className = "style-opt media-opt";
-  browse.textContent = "📂 Browse file…";
+  browse.textContent = uiText("📂 Browse file…");
   browse.addEventListener("click", () => {
     close();
     pickReplacementFile(c);
@@ -1623,7 +1629,7 @@ function openMediaPicker(anchor, c) {
     empty.className = "style-opt media-opt";
     empty.style.opacity = ".6";
     empty.style.cursor = "default";
-    empty.textContent = `No other ${c.kind} in bin`;
+    empty.textContent = uiText("No other {kind} in bin", { kind: uiText(c.kind) });
     menu.appendChild(empty);
   }
   const onDoc = (e) => { if (!menu.contains(e.target) && e.target !== anchor) close(); };
@@ -1699,12 +1705,12 @@ function enabledTracks() {
 function closeGapAtPlayhead() {
   const t = state.time;
   const enabled = enabledTracks();
-  if (!enabled.length) { toast("No enabled tracks"); return; }
+  if (!enabled.length) { toast(uiText("No enabled tracks")); return; }
   let L = 0, R = Infinity;
   for (const tr of enabled) {
     const g = gapAtPlayhead(tr.id, t);
     if (!g) {
-      toast(`No gap on ${tr.id} — disable the track or move the playhead`);
+      toast(uiText("No gap on {track} — disable the track or move the playhead", { track: tr.id }));
       return;
     }
     L = Math.max(L, g.gapStart);
@@ -1712,17 +1718,17 @@ function closeGapAtPlayhead() {
   }
   const G = R - L;
   if (!isFinite(R) || G <= GAP_EPS) {
-    toast("Nothing to close at playhead");
+    toast(uiText("Nothing to close at playhead"));
     return;
   }
   const movers = project.clips.filter((c) => isTrackEnabled(c.track) && c.start >= R - GAP_EPS);
-  if (!movers.length) { toast("Nothing to close at playhead"); return; }
+  if (!movers.length) { toast(uiText("Nothing to close at playhead")); return; }
   pushUndo();
   for (const c of movers) c.start = Math.max(0, c.start - G);
   state.dirtyTimeline = true;
   scheduleSave();
   const label = G >= 1 ? G.toFixed(2) : G.toFixed(3);
-  toast(`Closed ${label}s gap`);
+  toast(uiText("Closed {seconds}s gap", { seconds: label }));
 }
 function clearFocusedTransition() {
   if (!state.transFocus || !state.selId) return false;
@@ -1759,9 +1765,9 @@ function saveLastTransition(side, tr) {
 }
 function addTransitionAtPlayhead() {
   const c = getClip(state.selId);
-  if (!c) { toast("Select a clip first"); return; }
+  if (!c) { toast(uiText("Select a clip first")); return; }
   const t = state.time;
-  if (t < c.start || t >= clipEnd(c)) { toast("Move playhead over the selected clip"); return; }
+  if (t < c.start || t >= clipEnd(c)) { toast(uiText("Move playhead over the selected clip")); return; }
   const side = (t - c.start) / c.duration < 0.5 ? "in" : "out";
   const key = side === "in" ? "transitionIn" : "transitionOut";
   const preset = loadLastTransition(side);
@@ -1828,11 +1834,11 @@ function ensurePlayheadVisible() {
 /* Jump playhead to the middle of the next aligned gap (wraps). */
 function goToNextGap() {
   const { t0, t1 } = gapSearchRange();
-  if (t1 - t0 <= GAP_EPS) { toast("No gaps found"); return; }
+  if (t1 - t0 <= GAP_EPS) { toast(uiText("No gaps found")); return; }
   const gaps = listAlignedGaps(t0, t1);
   if (!gaps.length) {
     toast(project.inPoint != null && project.outPoint != null
-      ? "No gaps in IN/OUT range" : "No gaps found");
+      ? uiText("No gaps in IN/OUT range") : uiText("No gaps found"));
     return;
   }
   const t = state.time;
@@ -1899,14 +1905,14 @@ function relinkSplitRights(targets, newLink) {
 function splitAtWorkArea() {
   const cuts = [project.inPoint, project.outPoint].filter((t) => t != null);
   if (!cuts.length) {
-    toast("Set an IN or OUT marker first (I / O)");
+    toast(uiText("Set an IN or OUT marker first (I / O)"));
     return;
   }
   const onTrack = (c) => typeof isTrackEnabled !== "function" || isTrackEnabled(c.track);
   const targets = withLinked(project.clips.filter((c) =>
     onTrack(c) && cuts.some((t) => t > c.start + MIN_DUR && t < clipEnd(c) - MIN_DUR)
   ));
-  if (!targets.length) { toast("Nothing to split at IN/OUT"); return; }
+  if (!targets.length) { toast(uiText("Nothing to split at IN/OUT")); return; }
   pushUndo();
   // Right-to-left so each successive cut still lands on the left-hand piece
   for (const t of cuts.slice().sort((a, b) => b - a)) {
@@ -1940,7 +1946,7 @@ function trimToPlayhead(side) {
 function trimToWorkArea() {
   const inn = project.inPoint, out = project.outPoint;
   if (inn == null && out == null) {
-    toast("Set an IN or OUT marker first (I / O)");
+    toast(uiText("Set an IN or OUT marker first (I / O)"));
     return;
   }
   const onTrack = (c) => typeof isTrackEnabled !== "function" || isTrackEnabled(c.track);
@@ -1952,7 +1958,7 @@ function trimToWorkArea() {
     if (out != null) t1 = Math.min(t1, out);
     return t1 - t0 < MIN_DUR || t0 > start + 1e-6 || t1 < end - 1e-6;
   });
-  if (!willChange) { toast("Nothing to trim"); return; }
+  if (!willChange) { toast(uiText("Nothing to trim")); return; }
 
   pushUndo();
   const doomed = new Set();
@@ -2053,7 +2059,7 @@ function buildTrackDOM() {
     h.style.height = t.h + "px";
     h.innerHTML =
       `<button type="button" class="track-toggle" aria-pressed="${on}" ` +
-      `title="${on ? "Disable track" : "Enable track"}" style="color:${t.color}">` +
+      `title="${on ? uiText("Disable track") : uiText("Enable track")}" style="color:${t.color}">` +
       `${trackToggleIcon(t.kind)}</button>` +
       `<span class="track-id">${t.id}</span>`;
     h.querySelector(".track-toggle").addEventListener("click", (ev) => {
@@ -2101,12 +2107,12 @@ function transitionMarksHtml(c, trackH) {
       html += `<div class="trans-mark in${focused}" style="width:${w}px" data-side="in">` +
         `<svg viewBox="0 0 ${w} ${clipH}" preserveAspectRatio="none" aria-hidden="true">` +
         `<polygon points="0,0 ${w},0 0,${bot}"/></svg>` +
-        `<div class="trans-dur-handle" title="Drag to adjust duration"></div></div>`;
+        `<div class="trans-dur-handle" title="${uiAttr("Drag to adjust duration")}"></div></div>`;
     } else {
       html += `<div class="trans-mark out${focused}" style="width:${w}px" data-side="out">` +
         `<svg viewBox="0 0 ${w} ${clipH}" preserveAspectRatio="none" aria-hidden="true">` +
         `<polygon points="0,0 ${w},0 ${w},${bot}"/></svg>` +
-        `<div class="trans-dur-handle" title="Drag to adjust duration"></div></div>`;
+        `<div class="trans-dur-handle" title="${uiAttr("Drag to adjust duration")}"></div></div>`;
     }
   };
   wedge(c.transitionIn, "in");
@@ -2139,7 +2145,7 @@ function clipKeyframesHtml(c) {
   for (const { t, keys } of groups) {
     if (t < -1e-6 || t > c.duration + 1e-6) continue;
     const pct = Math.max(0, Math.min(100, (t / c.duration) * 100));
-    const label = keys.join(", ") + " @ " + fmt(c.start + t);
+    const label = keys.map((key) => uiText(key[0].toUpperCase() + key.slice(1))).join(", ") + " @ " + fmt(c.start + t);
     const badge = keys.length > 1 ? `<span class="clip-kf-n">${keys.length}</span>` : "";
     const multi = keys.length > 1 ? " multi" : "";
     html += `<div class="clip-kf${multi}" style="left:${pct}%" data-t="${t}" title="${label}">${badge}</div>`;
@@ -2226,7 +2232,7 @@ function paintAudioOverlaps() {
       el.className = "track-overlap";
       el.style.left = (t0 * state.pps) + "px";
       el.style.width = Math.max(2, (t1 - t0) * state.pps) + "px";
-      el.title = "Overlapping audio";
+      el.title = uiText("Overlapping audio");
       row.appendChild(el);
     }
   }
@@ -2692,16 +2698,16 @@ function goToKeyframe(dir) {
       t >= c.start - 1e-6 && t <= c.start + c.duration + 1e-6);
   }
   const times = keyframeTimelineTimes(clips);
-  if (!times.length) { toast("No keyframes"); return; }
+  if (!times.length) { toast(uiText("No keyframes")); return; }
   const eps = 0.5 / Math.max(1, project.fps || 30);
   if (dir > 0) {
     const next = times.find((t) => t > state.time + eps);
-    if (next == null) { toast("No next keyframe"); return; }
+    if (next == null) { toast(uiText("No next keyframe")); return; }
     setTime(next);
   } else {
     let prev = null;
     for (const t of times) if (t < state.time - eps) prev = t;
-    if (prev == null) { toast("No previous keyframe"); return; }
+    if (prev == null) { toast(uiText("No previous keyframe")); return; }
     setTime(prev);
   }
 }
@@ -2726,7 +2732,7 @@ function setInPoint() {
   const prevOut = project.outPoint;
   const { inPoint, outPoint } = normalizeWorkArea(t, prevOut);
   if (prevOut != null && inPoint == null && outPoint == null) {
-    toast(Math.abs(t - prevOut) < 1e-6 ? "IN and OUT must be at different times" : "IN must be before OUT");
+    toast(Math.abs(t - prevOut) < 1e-6 ? uiText("IN and OUT must be at different times") : uiText("IN must be before OUT"));
   }
   project.inPoint = inPoint;
   project.outPoint = outPoint;
@@ -2739,7 +2745,7 @@ function setOutPoint() {
   const prevIn = project.inPoint;
   const { inPoint, outPoint } = normalizeWorkArea(prevIn, t);
   if (prevIn != null && inPoint == null && outPoint == null) {
-    toast(Math.abs(t - prevIn) < 1e-6 ? "IN and OUT must be at different times" : "OUT must be after IN");
+    toast(Math.abs(t - prevIn) < 1e-6 ? uiText("IN and OUT must be at different times") : uiText("OUT must be after IN"));
   }
   project.inPoint = inPoint;
   project.outPoint = outPoint;
@@ -2845,7 +2851,7 @@ function zoomToFit() {
    One clip → that clip; multiple → the time range covering all of them. */
 function zoomToSelection() {
   const clips = selectedClips();
-  if (!clips.length) { toast("Select a clip to zoom to"); return; }
+  if (!clips.length) { toast(uiText("Select a clip to zoom to")); return; }
   const t0 = Math.min(...clips.map((c) => c.start));
   const t1 = Math.max(...clips.map((c) => c.start + c.duration));
   zoomToRange(t0, t1);
@@ -2854,7 +2860,7 @@ function zoomToSelection() {
 function zoomToWorkArea() {
   const t0 = project.inPoint, t1 = project.outPoint;
   if (t0 == null || t1 == null || t1 <= t0) {
-    toast("Set IN and OUT markers first (I / O)");
+    toast(uiText("Set IN and OUT markers first (I / O)"));
     return;
   }
   zoomToRange(t0, t1);
@@ -2906,7 +2912,7 @@ function selectClipsByMediaId(mediaId) {
   const clips = project.clips.filter((c) => c.mediaId === mediaId);
   if (!clips.length) {
     setSelection([]);
-    toast("No clips on the timeline use this media");
+    toast(uiText("No clips on the timeline use this media"));
     return;
   }
   clips.sort((a, b) => a.start - b.start || String(a.id).localeCompare(String(b.id)));
@@ -2947,7 +2953,7 @@ const selectedClips = () => project.clips.filter((c) => state.selIds.has(c.id));
 function renderInspector(lite) {
   const c = getClip(state.selId);
   if (!c) {
-    els.inspector.innerHTML = `<div class="inspector-empty">Select a clip to edit its<br>transform, effects &amp; audio.</div>`;
+    els.inspector.innerHTML = `<div class="inspector-empty">${uiText("Select a clip to edit its")}<br>${uiText("transform, effects & audio.")}</div>`;
     renderKfGraphsPanel();
     return;
   }
@@ -2960,11 +2966,12 @@ function renderInspector(lite) {
   const p = c.props;
   const kfCount = (k) => (c.keyframes && c.keyframes[k] ? c.keyframes[k].length : 0);
   const kfCtl = (k) => !ANIMATABLE.includes(k) ? "" :
-    `<span class="kf-ctl"><button class="kf-btn${kfCount(k) ? " has" : ""}" data-kf="${k}" title="Set keyframe at playhead">◆${kfCount(k) || ""}</button>${kfCount(k) ? `<button class="kf-btn" data-kfclear="${k}" title="Clear keyframes">✕</button>` : ""}</span>`;
+    `<span class="kf-ctl"><button class="kf-btn${kfCount(k) ? " has" : ""}" data-kf="${k}" title="${uiAttr("Set keyframe at playhead")}">◆${kfCount(k) || ""}</button>${kfCount(k) ? `<button class="kf-btn" data-kfclear="${k}" title="${uiAttr("Clear keyframes")}">✕</button>` : ""}</span>`;
   /* Label carries two affordances that key off different click modifiers:
      plain click toggles the keyframe graph (animatable props), Ctrl/Cmd-click
      resets the prop(s). `reset` overrides which keys reset; defaults to k. */
   const propLabel = (label, k = "", reset) => {
+    label = escapeHtml(uiText(label));
     const keys = reset !== undefined ? reset : k;
     const list = (Array.isArray(keys) ? keys : String(keys || "").split(",")).map((s) => s.trim()).filter(Boolean);
     const canReset = list.some((rk) => Object.hasOwn(DEFAULT_PROPS, rk) || rk === "transIn" || rk === "transOut");
@@ -2979,7 +2986,7 @@ function renderInspector(lite) {
     const attrs = (isGraph ? ` data-kfgraph="${k}"` : "") + (canReset ? ` data-reset="${list.join(",")}"` : "");
     const title = isGraph && canReset ? "Click: keyframe graph · Ctrl-click: reset"
       : isGraph ? "Show / hide keyframe graph" : "Ctrl-click to reset";
-    return `<label class="${cls}"${attrs} title="${title}">${label}</label>`;
+    return `<label class="${cls}"${attrs} title="${uiAttr(title)}">${label}</label>`;
   };
   const row = (label, inner, k = "", reset) =>
     `<div class="insp-row">${propLabel(label, k, reset)}${inner}${k ? kfCtl(k) : ""}</div>`;
@@ -2988,22 +2995,22 @@ function renderInspector(lite) {
       `<input type="range" data-k="${k}" min="${min}" max="${max}" step="${step}" value="${val}">
        <span class="val" data-val="${k}">${val}${unit}</span>`, k);
   let html = (state.selIds.size > 1
-    ? `<div class="insp-multi">${state.selIds.size} clips selected — drag moves them together, Del deletes all. Fields below edit the primary (white-outlined) clip.</div>`
-    : "") + `<div class="insp-section"><h3>Clip — ${c.kind}</h3>
+    ? `<div class="insp-multi">${uiText("{count} clips selected — drag moves them together, Del deletes all. Fields below edit the primary (white-outlined) clip.", { count: state.selIds.size })}</div>`
+    : "") + `<div class="insp-section"><h3>${uiText("Clip — {kind}", { kind: uiText(c.kind) })}</h3>
     ${row("Name", `<input type="text" data-k="name" value="${escapeHtml(c.name)}">`)}
-    ${c.mediaId ? row("Source", `<button type="button" class="btn tiny style-picker-btn" data-media-open title="Replace this clip's media — keeps position, trim, keyframes and effects">${escapeHtml((getMedia(c.mediaId) || {}).name || "Missing media")} ▾</button>`) : ""}
+    ${c.mediaId ? row("Source", `<button type="button" class="btn tiny style-picker-btn" data-media-open title="${uiAttr("Replace this clip's media — keeps position, trim, keyframes and effects")}">${escapeHtml((getMedia(c.mediaId) || {}).name || uiText("Missing media"))} ▾</button>`) : ""}
     ${row("Start (s)", `<input type="number" data-k="start" step="0.01" value="${c.start.toFixed(2)}">`)}
     ${row("Length (s)", `<input type="number" data-k="duration" step="0.01" value="${c.duration.toFixed(2)}">`)}
   </div>`;
   const sel = (label, k, opts, cur) => row(label,
-    `<select data-k="${k}">${opts.map((o) => `<option value="${o}" ${String(o) === String(cur) ? "selected" : ""}>${o}</option>`).join("")}</select>`, k);
+    `<select data-k="${k}">${opts.map((o) => `<option value="${o}" ${String(o) === String(cur) ? "selected" : ""}>${escapeHtml(uiText(String(o)))}</option>`).join("")}</select>`, k);
   const check = (label, k, on) => row(label, `<input type="checkbox" data-k="${k}" ${on ? "checked" : ""}>`, k);
   if (c.kind === "adjust") {
-    html += `<div class="insp-section"><h3>Adjustment layer</h3>
+    html += `<div class="insp-section"><h3>${uiText("Adjustment layer")}</h3>
       ${slider("opacity", 0, 1, 0.01, p.opacity)}
     </div>`;
   } else if (c.kind !== "audio") {
-    html += `<div class="insp-section"><h3>Transform</h3>
+    html += `<div class="insp-section"><h3>${uiText("Transform")}</h3>
       ${row("Position X", `<input type="number" data-k="x" value="${p.x}">`, "x")}
       ${row("Position Y", `<input type="number" data-k="y" value="${p.y}">`, "y")}
       ${slider("scale", 0.1, 4, 0.01, p.scale)}
@@ -3013,7 +3020,7 @@ function renderInspector(lite) {
     </div>`;
   }
   if (c.kind === "video" || c.kind === "image" || c.kind === "svg") {
-    html += `<div class="insp-section"><h3>Layout</h3>
+    html += `<div class="insp-section"><h3>${uiText("Layout")}</h3>
       ${sel("Fit", "fit", ["contain", "cover", "stretch", "none"], p.fit)}
       ${row("Crop L/R %", `<input type="number" data-k="cropL" min="0" max="95" value="${p.cropL}" style="max-width:58px">
                            <input type="number" data-k="cropR" min="0" max="95" value="${p.cropR}" style="max-width:58px">`, "", "cropL,cropR")}
@@ -3025,7 +3032,7 @@ function renderInspector(lite) {
     </div>`;
   }
   if (c.kind === "video" || c.kind === "image" || c.kind === "svg" || c.kind === "adjust") {
-    html += `<div class="insp-section"><h3>Filter / Color</h3>
+    html += `<div class="insp-section"><h3>${uiText("Filter / Color")}</h3>
       ${sel("Preset", "filterPreset", Object.keys(FILTER_PRESETS), p.filterPreset)}
       ${slider("brightness", 0, 200, 1, p.brightness, "%")}
       ${slider("contrast", 0, 200, 1, p.contrast, "%")}
@@ -3039,7 +3046,7 @@ function renderInspector(lite) {
       ${slider("invert", 0, 100, 1, p.invert, "%")}
       ${slider("vignette", 0, 100, 1, p.vignette, "%")}
     </div>
-    <div class="insp-section"><h3>Motion FX</h3>
+    <div class="insp-section"><h3>${uiText("Motion FX")}</h3>
       ${slider("shake", 0, 40, 0.5, p.shake, "px")}
       ${slider("shakeSpeed", 1, 30, 0.5, p.shakeSpeed)}
       ${slider("rgbSplit", 0, 30, 0.5, p.rgbSplit, "px")}
@@ -3047,9 +3054,9 @@ function renderInspector(lite) {
     </div>`;
   }
   if (c.kind === "video" || c.kind === "image") {
-    html += `<div class="insp-section"><h3>Keying / Cut-out</h3>
+    html += `<div class="insp-section"><h3>${uiText("Keying / Cut-out")}</h3>
       ${row("Key color", `<input type="color" data-k="chromaKey" value="${p.chromaKey || "#00ff00"}">
-        <button class="btn tiny${p.chromaKey ? "" : " toggle on"}" data-action="keyoff" title="Disable chroma key">off</button>`, "", "chromaKey")}
+        <button class="btn tiny${p.chromaKey ? "" : " toggle on"}" data-action="keyoff" title="${uiAttr("Disable chroma key")}">${uiText("off")}</button>`, "", "chromaKey")}
       ${slider("chromaTolerance", 0, 100, 1, p.chromaTolerance)}
       ${slider("chromaSoftness", 0, 100, 1, p.chromaSoftness)}
       ${check("AI bg remove", "bgRemove", p.bgRemove)}
@@ -3057,9 +3064,9 @@ function renderInspector(lite) {
   }
   if (c.kind === "video" || c.kind === "audio") {
     const chIdx = c.props?.audioChannel;
-    const chLabel = chIdx === 0 ? "Left" : chIdx === 1 ? "Right"
-                  : Number.isInteger(chIdx) ? `Channel ${chIdx + 1}` : null;
-    html += `<div class="insp-section"><h3>Audio / Time</h3>
+    const chLabel = chIdx === 0 ? uiText("Left") : chIdx === 1 ? uiText("Right")
+                  : Number.isInteger(chIdx) ? uiText("Channel {number}", { number: chIdx + 1 }) : null;
+    html += `<div class="insp-section"><h3>${uiText("Audio / Time")}</h3>
       ${chLabel ? row("Channel", `<span style="opacity:.75">${chLabel}</span>`) : ""}
       ${slider("volume", 0, 2, 0.01, p.volume)}
       ${slider("speed", 0.25, 4, 0.05, p.speed, "×")}
@@ -3067,44 +3074,44 @@ function renderInspector(lite) {
   }
   const tsel = (label, key, tr) => {
     const active = state.transFocus === (key === "transIn" ? "in" : "out");
-    return `<div class="insp-row${active ? " trans-active" : ""}"><label class="insp-reset" data-reset="${key}" title="Ctrl-click to reset">${label}</label>
-      <span class="insp-ctrls"><select data-k="${key}">${TRANSITIONS.map((x) => `<option ${x === (tr?.type || "none") ? "selected" : ""}>${x}</option>`).join("")}</select>
+    return `<div class="insp-row${active ? " trans-active" : ""}"><label class="insp-reset" data-reset="${key}" title="${uiAttr("Ctrl-click to reset")}">${escapeHtml(uiText(label))}</label>
+      <span class="insp-ctrls"><select data-k="${key}">${TRANSITIONS.map((x) => `<option value="${x}" ${x === (tr?.type || "none") ? "selected" : ""}>${uiText(x)}</option>`).join("")}</select>
        <input type="number" class="insp-dur" data-k="${key}Dur" step="0.1" min="0.1" value="${tr?.duration ?? 1}"></span></div>`;
   };
-  html += `<div class="insp-section"><h3>Transition</h3>
+  html += `<div class="insp-section"><h3>${uiText("Transition")}</h3>
     ${tsel("In", "transIn", c.transitionIn)}
     ${tsel("Out", "transOut", c.transitionOut)}
   </div>`;
   if (c.kind === "text") {
     const fontGroup = (label, fonts) => fonts.length
-      ? `<optgroup label="${label}">${fonts.map((f) => `<option ${f === p.font ? "selected" : ""}>${f}</option>`).join("")}</optgroup>` : "";
+      ? `<optgroup label="${uiAttr(label)}">${fonts.map((f) => `<option ${f === p.font ? "selected" : ""}>${f}</option>`).join("")}</optgroup>` : "";
     const known = [...SYSTEM_FONTS, ...runtime.customFonts, ...GOOGLE_FONTS, ...runtime.googleLoaded];
-    html += `<div class="insp-section"><h3>Text</h3>
-      ${row("Content", `<textarea data-k="text">${p.text}</textarea>`, "", "text")}
+    html += `<div class="insp-section"><h3>${uiText("Text")}</h3>
+      ${row("Content", `<textarea data-k="text">${escapeHtml(p.text)}</textarea>`, "", "text")}
       ${row(hasTextBox(p) && p.boxFit ? "Max size" : "Font size",
         `<input type="range" data-k="fontSize" min="12" max="300" step="1" value="${p.fontSize}">
          <span class="val" data-val="fontSize">${p.fontSize}px</span>`, "fontSize")}
       ${row("Box W/H", `<span class="insp-ctrls">
-        <input type="number" data-k="boxW" min="0" step="1" value="${p.boxW || 0}" title="Width in px (0 = no box — hug content)" style="max-width:64px">
-        <input type="number" data-k="boxH" min="0" step="1" value="${p.boxH || 0}" title="Height in px (0 = no box — hug content)" style="max-width:64px">
+        <input type="number" data-k="boxW" min="0" step="1" value="${p.boxW || 0}" title="${uiAttr("Width in px (0 = no box — hug content)")}" style="max-width:64px">
+        <input type="number" data-k="boxH" min="0" step="1" value="${p.boxH || 0}" title="${uiAttr("Height in px (0 = no box — hug content)")}" style="max-width:64px">
       </span>`, "", "boxW,boxH")}
       ${hasTextBox(p) ? check("Scale to fit", "boxFit", !!p.boxFit) : ""}
       ${row("Color", `<span class="insp-ctrls"><input type="color" data-k="color" value="${p.color}">
-                      <input type="color" data-k="color2" value="${p.color2 || p.color}" title="Gradient bottom color">
-                      <button class="btn tiny${p.color2 ? "" : " toggle on"}" data-action="grad-off" title="Disable gradient">flat</button></span>`, "", "color,color2")}
+                      <input type="color" data-k="color2" value="${p.color2 || p.color}" title="${uiAttr("Gradient bottom color")}">
+                      <button class="btn tiny${p.color2 ? "" : " toggle on"}" data-action="grad-off" title="${uiAttr("Disable gradient")}">${uiText("flat")}</button></span>`, "", "color,color2")}
       ${sel("Align", "align", ["left", "center", "right", "justify"], p.align)}
       ${hasTextBox(p) ? sel("V-align", "vAlign", ["top", "middle", "bottom"], p.vAlign || "middle") : ""}
       ${sel("Direction", "direction", ["auto", "ltr", "rtl"], p.direction || "auto")}
     </div>
-    <div class="insp-section"><h3>Font</h3>
+    <div class="insp-section"><h3>${uiText("Font")}</h3>
       ${row("Family", `<select data-k="font">
         ${fontGroup("System", SYSTEM_FONTS)}
         ${fontGroup("Library fonts", runtime.customFonts)}
         ${fontGroup("Google fonts", [...new Set([...GOOGLE_FONTS, ...runtime.googleLoaded])])}
         ${known.includes(p.font) ? "" : `<option selected>${p.font}</option>`}
       </select>`, "", "font")}
-      ${row("Google font", `<input type="text" data-gfont placeholder="Type any Google Font name…">
-        <button class="btn tiny" data-action="gfont-load">Load</button>`)}
+      ${row("Google font", `<input type="text" data-gfont placeholder="${uiAttr("Type any Google Font name…")}">
+        <button class="btn tiny" data-action="gfont-load">${uiText("Load")}</button>`)}
       ${sel("Weight", "weight", [0, 300, 400, 500, 600, 700, 800, 900], p.weight)}
       ${check("Bold", "bold", p.bold)}
       ${check("Italic", "italic", p.italic)}
@@ -3112,7 +3119,7 @@ function renderInspector(lite) {
       ${slider("letterSpacing", -10, 60, 0.5, p.letterSpacing, "px")}
       ${slider("lineHeight", 0.7, 2.5, 0.05, p.lineHeight)}
     </div>
-    <div class="insp-section"><h3>Text style</h3>
+    <div class="insp-section"><h3>${uiText("Text style")}</h3>
       ${slider("strokeWidth", 0, 20, 0.5, p.strokeWidth, "px")}
       ${row("Stroke col.", `<input type="color" data-k="strokeColor" value="${p.strokeColor}">`, "", "strokeColor")}
       ${row("Bg color", `<input type="color" data-k="bgColor" value="${p.bgColor}">`, "", "bgColor")}
@@ -3120,12 +3127,12 @@ function renderInspector(lite) {
       ${slider("textShadow", 0, 40, 1, p.textShadow)}
       ${slider("glow", 0, 100, 1, p.glow)}
       ${row("Glow color", `<input type="color" data-k="glowColor" value="${p.glowColor || p.color}">
-        <button class="btn tiny${p.glowColor ? "" : " toggle on"}" data-action="glow-auto" title="Glow uses the text color">auto</button>`, "", "glowColor")}
+        <button class="btn tiny${p.glowColor ? "" : " toggle on"}" data-action="glow-auto" title="${uiAttr("Glow uses the text color")}">${uiText("auto")}</button>`, "", "glowColor")}
     </div>
-    <div class="insp-section"><h3>Title &amp; caption</h3>
-      ${row("Title style", `<button type="button" class="btn tiny style-picker-btn" data-style-open title="Pick a style — hover to preview it live">${(TITLE_STYLES[c.styleName] || {}).label || "Choose…"} ▾</button>
-        <button class="btn tiny" data-action="title-shuffle" title="Random style">Shuffle</button>`)}
-      ${row("Animation", `<select data-k="textAnim">${TEXT_ANIMS.map((a) => `<option ${a === p.textAnim ? "selected" : ""}>${a}</option>`).join("")}</select>`, "", "textAnim")}
+    <div class="insp-section"><h3>${uiText("Title & caption")}</h3>
+      ${row("Title style", `<button type="button" class="btn tiny style-picker-btn" data-style-open title="${uiAttr("Pick a style — hover to preview it live")}">${uiText((TITLE_STYLES[c.styleName] || {}).label || "Choose…")} ▾</button>
+        <button class="btn tiny" data-action="title-shuffle" title="${uiAttr("Random style")}">${uiText("Shuffle")}</button>`)}
+      ${row("Animation", `<select data-k="textAnim">${TEXT_ANIMS.map((a) => `<option value="${a}" ${a === p.textAnim ? "selected" : ""}>${uiText(a)}</option>`).join("")}</select>`, "", "textAnim")}
       ${slider("wordRate", 0.05, 0.6, 0.01, p.wordRate, "s")}
     </div>`;
   }
@@ -3204,7 +3211,7 @@ function renderInspector(lite) {
         if (!name) return;
         ensureFont(name);
         c.props.font = name;
-        toast(`Loading Google font "${name}"…`);
+        toast(uiText("Loading Google font \"{name}\"…", { name }));
       }
       else if (a === "title-shuffle") {
         const keys = Object.keys(TITLE_STYLES).filter((k) => k !== "plain" && k !== c.styleName);
@@ -3295,10 +3302,10 @@ function renderKfGraphsPanel() {
   }
   root.hidden = false;
   root.innerHTML = keys.map((k) => {
-    const label = KF_GRAPH_LABEL[k] || k;
+    const label = uiText(KF_GRAPH_LABEL[k] || k);
     return `<div class="kf-graph" data-kfgraph-card="${k}">
       <div class="kf-graph-head"><span>${label}</span>
-        <button type="button" data-kfgraph-close="${k}" title="Close graph">✕</button></div>
+        <button type="button" data-kfgraph-close="${k}" title="${uiAttr("Close graph")}">✕</button></div>
       <canvas width="160" height="52"></canvas>
     </div>`;
   }).join("");
@@ -3620,7 +3627,7 @@ function cycleMeterMode(ev) {
   try { localStorage.setItem("fablecut-meter-mode", meterState.mode); } catch {}
   if (meterState.modeBtn) meterState.modeBtn.textContent = METER_MODE_LABEL[meterState.mode];
   const root = $("vuMeter");
-  if (root) root.title = `Mode: ${METER_MODE_LABEL[meterState.mode]} — click to switch`;
+  if (root) root.title = uiText("Mode: {mode} — click to switch", { mode: METER_MODE_LABEL[meterState.mode] });
   // Reset ballistics so the bar doesn't linger from the previous scale reading
   for (const id of meterState.trackIds) {
     meterState.disp[id] = METER_DB_MIN;
@@ -3690,13 +3697,13 @@ function buildMeterDOM() {
   if (!root) return;
   const tracks = audioMeterTracks();
   root.innerHTML = "";
-  root.title = `Mode: ${METER_MODE_LABEL[meterState.mode]} — click to switch`;
+  root.title = uiText("Mode: {mode} — click to switch", { mode: METER_MODE_LABEL[meterState.mode] });
 
   const modeBtn = document.createElement("button");
   modeBtn.type = "button";
   modeBtn.className = "vu-mode";
   modeBtn.textContent = METER_MODE_LABEL[meterState.mode];
-  modeBtn.title = "Cycle RMS → LUFS → Peak";
+  modeBtn.title = uiText("Cycle RMS → LUFS → Peak");
   modeBtn.addEventListener("click", cycleMeterMode);
   root.appendChild(modeBtn);
   meterState.modeBtn = modeBtn;
@@ -3970,7 +3977,7 @@ function resetPreviewWait(retry = false) {
   if (retry) for (const prep of runtime.previewMedia.values()) prep.error = null;
   if (runtime.previewWait) els.btnPlay.textContent = state.playing ? "⏸" : "▶";
   runtime.previewWait = null;
-  els.btnPlay.title = "Play / Pause (Space)";
+  els.btnPlay.title = uiText("Play / Pause (Space)");
 }
 function silencePreviewMedia() {
   for (const [id, el] of runtime.clipEls) {
@@ -4284,7 +4291,7 @@ function ensureBgSeg() {
       bgSeg.seg = seg;
     }).catch(() => {
       bgSeg.failed = true;
-      toast("Background removal unavailable — couldn't load MediaPipe (offline?). Using chroma key still works.");
+      toast(uiText("Background removal unavailable — couldn't load MediaPipe (offline?). Using chroma key still works."));
     });
   }
   return bgSeg.loading;
@@ -5324,7 +5331,7 @@ function loop(ts) {
       if (!wait || wait.signature !== signature || wait.t !== candidate)
         wait = runtime.previewWait = { t: candidate, anchor: state.time, since: ts, signature };
       if (!wait.reported && ts - wait.since >= 200) {
-        els.btnPlay.title = "Buffering…";
+        els.btnPlay.title = uiText("Buffering…");
         els.btnPlay.textContent = "⏳";
       }
       const failed = waiting.find((item) => item.error);
@@ -5335,7 +5342,7 @@ function loop(ts) {
           pause();
           wait.reported = true;
           runtime.previewWait = wait;
-          toast(`Video preview: ${getMedia(c.mediaId)?.name || c.mediaId || c.id}: ${error || "loading timed out"}`);
+          toast(uiText("Video preview: {name}: {error}", { name: getMedia(c.mediaId)?.name || c.mediaId || c.id, error: error || uiText("loading timed out") }));
         }
       }
     } else {
@@ -5365,7 +5372,7 @@ function loop(ts) {
   if (state.exporting && !state.rendering) {
     const pct = dur ? (state.time / dur) * 100 : 0;
     els.exportProgress.style.width = pct.toFixed(1) + "%";
-    els.exportTitle.textContent = `Exporting… ${pct.toFixed(0)}%`;
+    els.exportTitle.textContent = uiText("Exporting… {percent}%", { percent: pct.toFixed(0) });
   }
   requestAnimationFrame(loop);
 }
@@ -5380,19 +5387,24 @@ function loop(ts) {
 
 function openExportSetup() {
   if (state.exporting) return;
-  if (!project.clips.length) { alert("Timeline is empty — add some clips first."); return; }
+  if (!project.clips.length) { alert(uiText("Timeline is empty — add some clips first.")); return; }
   const fastOk = state.connected && state.ffmpeg;
   els.engineFast.disabled = !fastOk;
   els.engineFast.checked = fastOk;
   els.engineRealtime.checked = !fastOk;
   $("engineOptimized").checked = false;
   $("engineOptimized").disabled = !(fastOk && state.ffprobe);
+  syncExportSetupNotes();
+  els.exportSetup.classList.remove("hidden");
+}
+function syncExportSetupNotes() {
+  const fastOk = state.connected && state.ffmpeg;
   $("engineOptimizedNote").textContent = fastOk && state.ffprobe
-    ? "Pre-decodes video frames and caches them. First export needs preparation; you can switch tabs."
-    : "Needs the server + ffmpeg and ffprobe on PATH.";
+    ? uiText("Pre-decodes video frames and caches them. First export needs preparation; you can switch tabs.")
+    : uiText("Needs the server + ffmpeg and ffprobe on PATH.");
   $("engineFastNote").textContent = fastOk
-    ? "Frame-accurate ffmpeg encode. Keeps rendering if you switch tabs."
-    : "Needs the server + ffmpeg on PATH.";
+    ? uiText("Frame-accurate ffmpeg encode. Keeps rendering if you switch tabs.")
+    : uiText("Needs the server + ffmpeg on PATH.");
   const warn = $("exportTrackWarn");
   const disabled = TRACKS.filter((t) =>
     !isTrackEnabled(t.id) && project.clips.some((c) => c.track === t.id)
@@ -5400,14 +5412,13 @@ function openExportSetup() {
   if (disabled.length && warn) {
     const list = disabled.join(", ");
     warn.textContent = disabled.length === 1
-      ? `Track ${list} is disabled and will be omitted from the export.`
-      : `Tracks ${list} are disabled and will be omitted from the export.`;
+      ? uiText("Track {tracks} is disabled and will be omitted from the export.", { tracks: list })
+      : uiText("Tracks {tracks} are disabled and will be omitted from the export.", { tracks: list });
     warn.classList.remove("hidden");
   } else if (warn) {
     warn.textContent = "";
     warn.classList.add("hidden");
   }
-  els.exportSetup.classList.remove("hidden");
 }
 function startChosenExport() {
   els.exportSetup.classList.add("hidden");
@@ -5538,12 +5549,12 @@ async function fastExport(options = {}) {
   state.exporting = true; state.rendering = true; renderCancelled = false;
   els.exportOverlay.classList.remove("hidden");
   els.exportProgress.style.width = "0%";
-  els.exportNote.textContent = "Rendering frames → ffmpeg. You can switch tabs; export continues.";
+  els.exportNote.textContent = uiText("Rendering frames → ffmpeg. You can switch tabs; export continues.");
   const fps = project.fps, dur = Math.max(1 / fps, projDur());
   const frames = Math.max(1, Math.round(dur * fps));
   let sessId = null;
   try {
-    els.exportTitle.textContent = "Mixing audio…";
+    els.exportTitle.textContent = uiText("Mixing audio…");
     const wav = await renderAudioMix(dur);
     if (renderCancelled) throw new Error("cancelled");
     const exportName = options.name || project.name.replace(/[^\w\- ]+/g, "") || "export";
@@ -5570,9 +5581,9 @@ async function fastExport(options = {}) {
       if (!r.ok) throw new Error((await r.json()).error || "frame upload failed");
       const pct = ((f + 1) / frames) * 100;
       els.exportProgress.style.width = pct.toFixed(1) + "%";
-      els.exportTitle.textContent = `Rendering… ${pct.toFixed(0)}%`;
+      els.exportTitle.textContent = uiText("Rendering… {percent}%", { percent: pct.toFixed(0) });
     }
-    els.exportTitle.textContent = "Encoding…";
+    els.exportTitle.textContent = uiText("Encoding…");
     const end = await fetch("/api/export/end?id=" + sessId, { method: "POST" }).then((r) => r.json());
     if (!end.src) throw new Error(end.error || "encode failed");
     if (!options.requestId) {
@@ -5586,11 +5597,11 @@ async function fastExport(options = {}) {
     if (options.requestId) await fetch(projectApi("/api/export/report"), {
       method: "POST", body: JSON.stringify({ requestId: options.requestId, error: String(e.message || e) }),
     }).catch(() => { });
-    if (!options.requestId && String(e.message) !== "cancelled") alert("Export failed: " + e.message);
+    if (!options.requestId && String(e.message) !== "cancelled") alert(uiText("Export failed: ") + e.message);
   } finally {
     state.exporting = false; state.rendering = false;
     els.exportOverlay.classList.add("hidden");
-    els.exportNote.textContent = "Rendering your sequence in real time. Keep this tab focused.";
+    els.exportNote.textContent = uiText("Rendering your sequence in real time. Keep this tab focused.");
     if (runtime.pendingSync) syncFromServer();
   }
 }
@@ -5606,9 +5617,9 @@ function pickMime() {
 }
 async function startExport() {
   if (state.exporting) return;
-  if (!project.clips.length) { alert("Timeline is empty — add some clips first."); return; }
+  if (!project.clips.length) { alert(uiText("Timeline is empty — add some clips first.")); return; }
   const mime = pickMime();
-  if (!mime) { alert("MediaRecorder is not supported in this browser."); return; }
+  if (!mime) { alert(uiText("MediaRecorder is not supported in this browser.")); return; }
   ensureAudio();
   await runtime.audio.ctx.resume();
   pause();
@@ -5707,11 +5718,12 @@ function onSettingsTabTrap(e) {
 function openSettings() {
   const cb = $("setLinkSelect");
   if (cb) cb.checked = !!getSetting("linkSelect");
+  $("setLanguage").value = getSetting("language");
   const overlay = $("settingsOverlay");
   overlay.classList.remove("hidden");
   overlay.addEventListener("keydown", onSettingsTabTrap);
   const dialog = $("settingsDialog");
-  (cb || dialog)?.focus();
+  ($("setLanguage") || dialog)?.focus();
 }
 function closeSettings() {
   const overlay = $("settingsOverlay");
@@ -5724,6 +5736,29 @@ $("btnCloseSettings").addEventListener("click", closeSettings);
 $("settingsOverlay").addEventListener("click", (e) => {
   if (e.target === $("settingsOverlay")) closeSettings();
 });
+$("setLanguage").addEventListener("change", (e) => {
+  setSetting("language", FableCutI18n.normalize(e.target.value));
+  applyInterfaceLanguage();
+});
+function applyInterfaceLanguage() {
+  FableCutI18n.setLanguage(getSetting("language"));
+  FableCutI18n.apply(document);
+  $("setLanguage").value = FableCutI18n.language;
+  els.projectName.textContent = uiText(state.connected ? "🟢 connected" : "⚪ local session");
+  closeStylePicker();
+  runtime.mediaMenu?.close();
+  closeBinCtxMenu();
+  renderBin();
+  renderLibrary();
+  renderInspector();
+  for (const track of TRACKS) syncTrackDisabledUI(track.id);
+  state.dirtyTimeline = true;
+  syncAspectSel();
+  syncFpsSel();
+  syncExportSetupNotes();
+  buildMeterDOM();
+  els.btnPlay.title = uiText(runtime.previewWait ? "Buffering…" : "Play / Pause (Space)");
+}
 $("setLinkSelect").addEventListener("change", (e) => {
   setSetting("linkSelect", !!e.target.checked);
   if (!getSetting("linkSelect")) {
@@ -5765,7 +5800,7 @@ function openProjectTabMenu(clientX, clientY) {
   menu.className = "ctx-menu";
   const item = document.createElement("div");
   item.className = "ctx-opt";
-  item.textContent = "New folder";
+  item.textContent = uiText("New folder");
   item.addEventListener("click", () => {
     closeBinCtxMenu();
     if (state.binTab !== "project") setBinTab("project");
@@ -5792,8 +5827,8 @@ function syncAspectSel() {
   if (!els.aspectSel) return;
   const i = ASPECT_PRESETS.findIndex((a) => a.w === project.width && a.h === project.height);
   els.aspectSel.innerHTML =
-    ASPECT_PRESETS.map((a, j) => `<option value="${j}" ${j === i ? "selected" : ""}>${a.label}</option>`).join("") +
-    (i < 0 ? `<option value="custom" selected>Custom · ${project.width}×${project.height}</option>` : "");
+    ASPECT_PRESETS.map((a, j) => `<option value="${j}" ${j === i ? "selected" : ""}>${uiText(a.label)}</option>`).join("") +
+    (i < 0 ? `<option value="custom" selected>${uiText("Custom · {width}×{height}", { width: project.width, height: project.height })}</option>` : "");
 }
 function syncFpsSel() {
   if (!els.fpsSel) return;
@@ -5802,7 +5837,7 @@ function syncFpsSel() {
   els.fpsSel.innerHTML =
     FPS_PRESETS.map((v, j) => `<option value="${j}" ${j === i ? "selected" : ""}>${v} fps</option>`).join("") +
     (i < 0 && Number.isFinite(fps) && fps > 0
-      ? `<option value="custom" selected>Custom · ${fps} fps</option>`
+      ? `<option value="custom" selected>${uiText("Custom · {fps} fps", { fps })}</option>`
       : "");
 }
 els.aspectSel.addEventListener("change", () => {
@@ -6132,7 +6167,7 @@ function resetTimelineHeight() {
   return h;
 }
 function trackSizeShowsThumbs() {
-  return !!(TRACK_SIZE_PRESETS[state.trackSize] || TRACK_SIZE_PRESETS.l).thumbs;
+  return !!(TRACK_SIZE_PRESETS[state.trackSize] || TRACK_SIZE_PRESETS.s).thumbs;
 }
 function syncTrackSizeButtons() {
   const group = $("trackSizeGroup");
@@ -6144,7 +6179,7 @@ function syncTrackSizeButtons() {
   document.body.classList.toggle("track-size-l", state.trackSize === "l");
 }
 function applyTrackHeights() {
-  const preset = TRACK_SIZE_PRESETS[state.trackSize] || TRACK_SIZE_PRESETS.l;
+  const preset = TRACK_SIZE_PRESETS[state.trackSize] || TRACK_SIZE_PRESETS.s;
   for (const t of TRACKS) {
     // tracks beyond the static set (e.g. A5+, auto-added for >4-channel audio)
     // aren't named in the preset map — size them like the first track of their kind.
@@ -6155,7 +6190,7 @@ function applyTrackHeights() {
 /* Switch S/M/L track density, rebuild the timeline, and grow/shrink the pane
    so every track fits without a vertical scrollbar. */
 function setTrackSize(size, { persist = true, fitPane = true } = {}) {
-  if (!TRACK_SIZE_PRESETS[size]) size = "l";
+  if (!TRACK_SIZE_PRESETS[size]) size = "s";
   state.trackSize = size;
   applyTrackHeights();
   if (persist) localStorage.setItem(TRACK_SIZE_KEY, size);
@@ -6169,7 +6204,7 @@ function setTrackSize(size, { persist = true, fitPane = true } = {}) {
   }
 }
 function restoreDefaultLayout() {
-  setTrackSize("l", { persist: true, fitPane: false });
+  setTrackSize("s", { persist: true, fitPane: false });
   resetTimelineHeight();
 }
 function clampTimelineHeight() {
@@ -6218,6 +6253,11 @@ function initPanelSplit() {
 
 /* ── Boot ── */
 loadSettings();
+FableCutI18n.setLanguage(getSetting("language"));
+FableCutI18n.apply(document);
+$("setLanguage").value = getSetting("language");
+syncAspectSel();
+syncFpsSel();
 initPanelSplit();
 buildTrackDOM();
 rebuildClips();

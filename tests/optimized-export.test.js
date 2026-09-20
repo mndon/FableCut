@@ -121,7 +121,7 @@ test("export dialog preserves original defaults and gates only the new engine on
   const code = source.slice(source.indexOf("function openExportSetup()"), source.indexOf("/* ── Fast export ── */"));
   const controls = new Map();
   const element = id => { if (!controls.has(id)) controls.set(id, { classList: { add() {}, remove() {} } }); return controls.get(id); };
-  const sandbox = { state: { connected: true, ffmpeg: true, ffprobe: true }, project: { clips: [{}] }, TRACKS: [], $: element,
+  const sandbox = { uiText: message => message, state: { connected: true, ffmpeg: true, ffprobe: true }, project: { clips: [{}] }, TRACKS: [], $: element,
     els: { engineFast: element("fast"), engineRealtime: element("realtime"), exportSetup: element("setup") }, alert() {},
     optimizedExport() { sandbox.chosen = "optimized"; }, fastExport() { sandbox.chosen = "fast"; }, startExport() { sandbox.chosen = "realtime"; } };
   vm.createContext(sandbox); vm.runInContext(code, sandbox);

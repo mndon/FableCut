@@ -57,9 +57,14 @@ same time.
 
 - 3 video tracks + 4 audio tracks, drag/trim/split/snap, undo/redo
 - **Settings** (cog in the top bar) — optional prefs stored in this browser via
-  `localStorage`. Enable **Link timeline and Project bin selection** so picking a
+  `localStorage`. Switch **Interface language** between **简体中文** (default)
+  and **English**, with immediate updates across editor controls, dialogs,
+  inspector labels and export progress. Project/media names, captions and font
+  families keep their original content. Enable **Link timeline and Project bin selection** so picking a
   timeline clip highlights its media in Project, and clicking a Project item
   selects every timeline clip that uses it (off by default).
+- **Timeline layout** defaults to **S**. Saved S/M/L preferences are preserved;
+  **Reset layout** restores S.
 - **Direct manipulation on the monitor** — click a clip or title on the preview to
   move, resize (corner handles), or rotate (top handle, Shift-snap) it directly
 - **Timeline multi-select** — rubber-band marquee (drag on empty track area),
@@ -412,6 +417,7 @@ server.js        zero-dependency HTTP server: static hosting, REST API, SSE,
                  ffmpeg export pipeline
 app.js           the editor: timeline UI, compositor, keyframes, text engine,
                  SVG rasterizer, chroma key, exporters
+i18n.js          Chinese UI catalog, English fallback and language helpers
 index.html       single-page UI
 style.css        dark editor theme
 mcp-server.js    stdio MCP server exposing the editor to AI agents

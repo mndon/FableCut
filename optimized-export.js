@@ -180,8 +180,8 @@ async function optimizedExport(options = {}) {
   window.addEventListener("pagehide", exit);
   window.addEventListener("keydown", preventEdit, true);
   els.exportOverlay.classList.remove("hidden"); els.exportProgress.style.width = "0%";
-  els.exportTitle.textContent = "Preparing source frames…";
-  els.exportNote.textContent = "Pre-decoding video and caching frames. You can switch tabs.";
+  els.exportTitle.textContent = uiText("Preparing source frames…");
+  els.exportNote.textContent = uiText("Pre-decoding video and caching frames. You can switch tabs.");
   try {
     // Let an already scheduled save settle; never force-overwrite a newer revision.
     const deadline = performance.now() + 5000;
@@ -238,8 +238,8 @@ async function optimizedExport(options = {}) {
         return null;
       }
       if (!prefetch && !readyManifests.has(keyForBlock) && stats.frames > 0) {
-        els.exportTitle.textContent = "Preparing video frames…";
-        els.exportNote.textContent = "Preparing the next part of your video. Export will continue automatically.";
+        els.exportTitle.textContent = uiText("Preparing video frames…");
+        els.exportNote.textContent = uiText("Preparing the next part of your video. Export will continue automatically.");
       }
       const m = prefetch ? readyManifests.get(keyForBlock) : await blockFor(c, time);
       if (m.fallback) return null;
@@ -303,7 +303,7 @@ async function optimizedExport(options = {}) {
     // Warm the opening frame before audio; subsequent blocks are demand/prefetch driven.
     await prepare(0);
     stats.phases.prepareMs = performance.now() - started;
-    els.exportTitle.textContent = "Mixing audio…";
+    els.exportTitle.textContent = uiText("Mixing audio…");
     let tick = performance.now(); const wav = await renderAudioMix(dur); checked(); stats.phases.audioMs = performance.now() - tick;
     const name = options.name || project.name.replace(/[^\w\- ]+/g, "") || "export";
     sessionId = (await api(projectApi("/api/export/begin"), { fps, name, requestId: options.requestId, engine: "optimized", cacheId })).id;
@@ -351,8 +351,8 @@ async function optimizedExport(options = {}) {
       evict(keep);
       const pct = (f + 1) / count * 100;
       els.exportProgress.style.width = pct.toFixed(1) + "%";
-      els.exportTitle.textContent = `Rendering… ${pct.toFixed(0)}%`;
-      els.exportNote.textContent = `Cached video frames · ${new Set([...Object.keys(cacheStatus.stats.fallbacks), ...failedClips]).size} compatibility fallbacks · You can switch tabs.`;
+      els.exportTitle.textContent = uiText("Rendering… {percent}%", { percent: pct.toFixed(0) });
+      els.exportNote.textContent = uiText("Cached video frames · {count} compatibility fallbacks · You can switch tabs.", { count: new Set([...Object.keys(cacheStatus.stats.fallbacks), ...failedClips]).size });
     }
     await pipeline.finish(); await queue.finish(); await frameReadAhead.stop(); stats.peakQueueBytes = queue.peakBytes;
     stats.phases.renderMs = performance.now() - renderingStarted;
@@ -361,19 +361,19 @@ async function optimizedExport(options = {}) {
       let n = 0; s.meanMs = s.totalMs / s.count;
       for (let i = 0; i < s.histogram.length; i++) { n += s.histogram[i]; if (n >= s.count * 0.95) { s.p95UpperMs = 2 ** i; break; } }
     }
-    els.exportTitle.textContent = "Encoding…"; tick = performance.now();
+    els.exportTitle.textContent = uiText("Encoding…"); tick = performance.now();
     stats.totalMs = performance.now() - started;
     const result = await api(`/api/export/end?id=${sessionId}`, { metrics: stats }); sessionId = null;
     stats.phases.finalizeMs = performance.now() - tick; stats.totalMs = performance.now() - started;
     stats.fps = count / (stats.totalMs / 1000);
     if (!options.requestId) { const a = document.createElement("a"); a.href = result.src; a.download = decodeURIComponent(result.src.split("/").pop()); a.click();
-      toast(`Optimized export complete: ${(stats.totalMs / 1000).toFixed(1)}s · ${stats.cache.hits} cache hits`); }
+      toast(uiText("Optimized export complete: {seconds}s · {hits} cache hits", { seconds: (stats.totalMs / 1000).toFixed(1), hits: stats.cache.hits })); }
     console.info("Optimized export", stats);
   } catch (e) {
     queue?.cancel(); controller.abort(); await queue?.finish().catch(() => {});
     const message = renderCancelled || e.name === "AbortError" ? "cancelled" : e.message;
     if (options.requestId) await fetch(projectApi("/api/export/report"), { method: "POST", body: JSON.stringify({ requestId: options.requestId, error: message }) }).catch(() => {});
-    else if (message !== "cancelled") alert("Optimized export failed: " + message);
+    else if (message !== "cancelled") alert(uiText("Optimized export failed: ") + message);
   } finally {
     clearInterval(heartbeat); release(); encoder?.close();
     controller.abort(); await readAhead?.stop(); await frameReadAhead?.stop(); await pipeline?.settle(); optimizedAbort = null; optimizedSources = null;
@@ -384,7 +384,7 @@ async function optimizedExport(options = {}) {
     state.exporting = false; state.rendering = false;
     window.removeEventListener("pagehide", exit); window.removeEventListener("keydown", preventEdit, true);
     els.exportOverlay.classList.add("hidden");
-    els.exportNote.textContent = "Rendering your sequence in real time. Keep this tab focused.";
+    els.exportNote.textContent = uiText("Rendering your sequence in real time. Keep this tab focused.");
     if (runtime.pendingSync) syncFromServer();
   }
 }

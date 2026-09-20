@@ -1794,6 +1794,24 @@ body.track-size-s .clip .clip-kf-n {
   flex: none;
 }
 
+.language-row {
+  align-items: center;
+  justify-content: space-between;
+}
+
+.language-row .settings-label {
+  margin: 0;
+}
+
+.language-row select {
+  min-width: 120px;
+  padding: 5px 8px;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
 .settings-label {
   display: block;
   color: #e8e8ec;
