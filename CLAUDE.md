@@ -665,7 +665,11 @@ Realtime unchanged, including their default selection. CLI users select it with
 `--engine fast` remains the default. Optimized additionally requires ffprobe.
 It uses the same compositor, SVG/AI preparation, offline audio mix, JPEG quality
 0.95, x264 CRF 18 and BT.709 output as Fast. Hardware encoding and parallel
-browser workers are not used.
+browser workers are not used. Optimized limits the output color-conversion
+filter to one FFmpeg thread so it does not compete with browser decoding and
+x264's own thread pool; encoding quality and color conversion are unchanged.
+Its final audio mux preserves all submitted video frames, even when audio ends
+a fraction of a frame earlier than the rounded video duration.
 
 For local, ordinary SDR constant-frame-rate video at fixed playback speed,
 ffmpeg sequentially extracts original-resolution lossless PNGs in five-second
@@ -695,7 +699,14 @@ when decoding cannot keep up; no frame is skipped to hide that wait.
 Uploads remain ordered with backpressure, capped at four JPEGs or 32 MiB
 (one oversized JPEG is transmitted alone). Where available, OffscreenCanvas
 encodes immutable snapshots in a dedicated worker at the same JPEG quality,
-avoiding main-page idle encoding. Older browsers retain Canvas encoding.
+overlapping encoding with preparation/compositing of following frames. At most
+two snapshots are in flight, reduced to one when two RGBA snapshots would exceed
+64 MiB (one oversized frame is still allowed; browser/worker overhead is extra).
+Worker failures encode the retained original snapshot, never the advanced preview.
+Future-frame image reads use two bounded background slots; the render loop waits
+only for its current source images, not for the entire read-ahead window.
+Speculative images cannot evict images needed by the current compositor frame.
+Older browsers retain sequential Canvas encoding.
 Cancellation releases jobs; cache leases expire after 90 seconds
 without activity. Complete blocks remain available for subsequent exports.
 
@@ -719,6 +730,9 @@ accepts optional `{metrics}`; completion status and CLI output include these
 metrics (phase times, approximate P95 timing buckets, cache hits/misses and
 fallback reasons, buffer high-water marks, server RSS, total elapsed time and
 `cutSourceWait` timing at the first output frame of each clip).
+Metrics also report `snapshotDepth` and `sourceFetch`, `sourceDecode`, `snapshot`
+and `pipeline` timing samples. `jpeg` measures snapshot-to-JPEG latency; these
+overlapping samples must not be added together as total elapsed time.
 Existing Fast clients can continue sending an empty end body.
 
 Run `node --test tests/*.test.js` for regression tests. After syncing the CLI

@@ -447,7 +447,8 @@ SDR constant-frame-rate video into five-second, lossless PNG cache blocks,
 selecting native display timestamps for fixed-speed clips. Small millisecond
 timestamp jitter is accepted without rounding frames to an ideal grid.
 Read-ahead prepares upcoming cuts as well as the active clip; future-frame
-prefetch never waits for an unfinished source block on the current frame.
+prefetch uses two bounded background slots and never makes the current frame
+wait for the entire future-frame window or an unfinished future source block.
 Unsupported or
 uncertain sources (including HDR, substantial variable frame rate, unspecified color matrices, rotation, non-square
 pixels and speed ramps) retain browser seeking; cache failures also fall back.
@@ -459,9 +460,20 @@ Decoded images have
 a 128 MiB budget, allowing current-frame requirements to exceed it. JPEG uploads
 stay ordered and bounded at four frames or 32 MiB. Completed caches survive
 exports; cancelled and expired sessions release their workers and leases.
+Worker JPEG encoding overlaps preparation/compositing of subsequent frames,
+with at most two immutable snapshots (reduced to one above a 64 MiB RGBA
+snapshot budget; one oversized frame is allowed and browser overhead is extra).
+If the worker fails, Canvas encodes the original snapshot. Browsers without
+worker encoding retain the sequential Canvas path.
+Optimized also limits FFmpeg's output color-conversion filter to one thread,
+leaving CPU capacity for browser decoding and x264 without changing quality.
+Final audio muxing preserves every submitted video frame, including the tail
+when the timeline duration is not an exact multiple of the frame interval.
 
 The UI shows export phases and completion time. CLI results add `metrics` with
 phase timings, cache hits/misses, compatibility fallback reasons, resource
 high-water marks and total time. Initial preparation can outweigh the benefit
 on short projects; repeat exports reuse source frames. See [CLAUDE.md](CLAUDE.md#optimized-export-opt-in)
 for cache API details and reproducible browser/performance tests.
+Source fetch/decode, snapshot and pipeline timings are measured separately;
+they overlap and should not be summed as total export time.

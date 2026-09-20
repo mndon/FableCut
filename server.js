@@ -184,6 +184,9 @@ function beginExport(fps, name, projectId, requestId, cacheId) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fablecut-"));
   const videoPath = path.join(dir, "video.mp4");
   const proc = spawn("ffmpeg", [
+    // This graph only converts color, without resizing. Avoid a CPU-wide
+    // filter pool competing with browser decoding/JPEG and x264's own threads.
+    ...(cacheId ? ["-filter_threads", "1"] : []),
     "-y", "-f", "image2pipe", "-vcodec", "mjpeg", "-framerate", String(fps), "-i", "-",
     // The browser's JPEG frames are full-range BT.601 (JFIF). Convert them to
     // limited-range BT.709 and TAG the stream, otherwise x264 emits bt470bg/pc/
@@ -469,7 +472,10 @@ const server = http.createServer(async (req, res) => {
                     "-color_trc", "bt709", "-color_range", "tv"];
       if (sess.wav && fs.existsSync(sess.wav))
         await run("ffmpeg", ["-y", "-i", sess.videoPath, "-i", sess.wav,
-          "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-shortest",
+          "-c:v", "copy", "-c:a", "aac", "-b:a", "192k",
+          // Optimized submitted an exact frame count. Audio can end a fraction
+          // of a frame earlier; -shortest can discard trailing reordered frames.
+          ...(sess.cacheId ? [] : ["-shortest"]),
           ...TAGS, "-movflags", "+faststart", out]);
       else
         await run("ffmpeg", ["-y", "-i", sess.videoPath, "-c", "copy",

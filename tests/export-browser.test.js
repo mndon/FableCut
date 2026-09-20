@@ -59,8 +59,9 @@ test("packaged runtime exports Fast and Optimized with matching frames", { skip:
       console.log(engine, run, ms, JSON.stringify(status.metrics ? { phases: status.metrics.phases, cache: status.metrics.cache, fps: status.metrics.fps } : {}));
       const file = path.join(data, "projects", "check", "exports", decodeURIComponent(status.src.split("/").pop()));
       const probe = JSON.parse(await command("ffprobe", ["-v", "error", "-show_streams", "-of", "json", file]));
-      assert.equal(Number(probe.streams[0].nb_frames), duration * 30);
-      assert.ok(Math.abs(Number(probe.streams[0].duration) - duration) < 0.04);
+      const expectedFrames = Math.round(Math.max(...project.clips.map(c => c.start + c.duration)) * project.fps);
+      assert.equal(Number(probe.streams[0].nb_frames), expectedFrames);
+      assert.ok(Math.abs(Number(probe.streams[0].duration) - expectedFrames / project.fps) < 0.04);
       assert.ok(probe.streams.some(s => s.codec_type === "audio"));
       return { file, ms, metrics: status.metrics };
     } finally { await stop(child); }
@@ -73,6 +74,16 @@ test("packaged runtime exports Fast and Optimized with matching frames", { skip:
     const cold = await render("optimized", "cold-" + run), warm = await render("optimized", "warm-" + run);
     assert.equal(Object.keys(cold.metrics.cache.fallbacks).length, 0);
     assert.ok(warm.metrics.cache.hits > 0);
+    assert.ok(cold.metrics.snapshotDepth >= 1 && cold.metrics.snapshotDepth <= 2);
+    // Scheduling/cache state must not change a single decoded frame or sample.
+    // This catches snapshot races that an aggregate SSIM score can conceal.
+    const hashes = [];
+    for (const output of [cold, warm]) {
+      const video = await command("ffmpeg", ["-v", "error", "-i", output.file, "-map", "0:v:0", "-pix_fmt", "rgb24", "-f", "framemd5", "-"]);
+      const audio = await command("ffmpeg", ["-v", "error", "-i", output.file, "-map", "0:a:0", "-c:a", "pcm_s16le", "-f", "hash", "-hash", "sha256", "-"]);
+      hashes.push({ video, audio });
+    }
+    assert.deepEqual(hashes[0], hashes[1], "cold/warm exports must have identical frames and PCM audio");
     // Compare decoded export frames, not container bytes. PNG source decode can
     // differ slightly in color conversion; no timing/frame mismatch is acceptable.
     let quality = "";
@@ -101,6 +112,12 @@ test("packaged runtime exports Fast and Optimized with matching frames", { skip:
     await command("ffmpeg", ["-hide_banner", "-i", reference.file, "-i", optimized.file, "-lavfi", "[0:v][1:v]ssim", "-an", "-f", "null", "-"], undefined, s => { quality += s; });
     const ssim = Number(/All:([\d.]+)/.exec(quality)?.[1]); assert.ok(ssim > 0.97, quality.slice(-500));
     console.log("layered scene SSIM", ssim);
+    // A fractional audio duration must not truncate the last B-frames during
+    // stream-copy muxing. This composition rounds to 181 video frames.
+    project.revision++;
+    for (const c of project.clips) if (c.duration === duration) c.duration += 0.017;
+    await fs.writeFile(path.join(projectDir, "project.json"), JSON.stringify(project));
+    await render("optimized", "fractional-tail");
   }
   await fs.writeFile(path.join(dir, "results.json"), JSON.stringify(results, null, 2));
   if (benchmark) {

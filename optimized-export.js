@@ -57,6 +57,36 @@ class SourceReadAhead {
   }
   stop() { this.stopped = true; this.plan = []; return this.active || Promise.resolve(); }
 }
+class FrameReadAhead {
+  constructor(load, concurrency = 2) {
+    this.load = load; this.concurrency = concurrency; this.plan = []; this.active = new Map(); this.stopped = false;
+  }
+  update(plan) { if (!this.stopped) { this.plan = plan; this.pump(); } }
+  pump() {
+    while (!this.stopped && this.active.size < this.concurrency && this.plan.length) {
+      const item = this.plan.shift();
+      if (this.active.has(item.key)) continue;
+      const task = Promise.resolve().then(() => this.load(item)).catch(() => {}).finally(() => {
+        this.active.delete(item.key); this.pump();
+      });
+      this.active.set(item.key, task);
+    }
+  }
+  async stop() { this.stopped = true; this.plan = []; await Promise.all(this.active.values()); }
+}
+// Capture stays ordered; only immutable snapshots may outlive the current frame.
+class SnapshotPipeline {
+  constructor(capture, write, depth = 2) { this.capture = capture; this.write = write; this.depth = depth; this.pending = []; }
+  async push(canvas) {
+    while (this.pending.length >= this.depth) await this.drain();
+    const job = await this.capture(canvas);
+    job.result.catch(() => {}); // Observe errors even if a later source read fails.
+    this.pending.push(job);
+  }
+  async drain() { const job = this.pending.shift(); if (job) await this.write(await job.result); }
+  async finish() { while (this.pending.length) await this.drain(); }
+  async settle() { await Promise.allSettled(this.pending.splice(0).map(job => job.result)); }
+}
 function createSnapshotEncoder(signal) {
   let worker, sequence = 0;
   const pending = new Map();
@@ -78,20 +108,35 @@ function createSnapshotEncoder(signal) {
   }
   return {
     close,
-    async encode(canvas) {
+    async capture(canvas) {
       if (signal.aborted) throw new Error("cancelled");
-      if (!worker) return new Promise(resolve => canvas.toBlob(resolve, "image/jpeg", 0.95));
+      // Legacy fallback is deliberately sequential: the next draw cannot race it.
+      if (!worker) return { result: Promise.resolve(await new Promise(resolve => canvas.toBlob(resolve, "image/jpeg", 0.95))) };
       const bitmap = await createImageBitmap(canvas);
-      if (signal.aborted || !worker) { bitmap.close(); throw new Error("snapshot encoder stopped"); }
+      if (signal.aborted) { bitmap.close(); throw new Error("cancelled"); }
       const id = sequence++;
-      return new Promise((resolve, reject) => {
-        pending.set(id, { resolve, reject });
-        try { worker.postMessage({ id, bitmap }, [bitmap]); }
-        catch (e) { bitmap.close(); pending.delete(id); reject(e); }
-      }).catch(e => {
+      const result = (async () => {
+        // Clone the immutable bitmap through the graphics API, then transfer it.
+        // Structured cloning in postMessage can force an expensive pixel copy.
+        const transferable = await createImageBitmap(bitmap);
+        return new Promise((resolve, reject) => {
+          if (signal.aborted || !worker) { transferable.close(); reject(new Error("snapshot encoder stopped")); return; }
+          pending.set(id, { resolve, reject });
+          try { worker.postMessage({ id, bitmap: transferable }, [transferable]); }
+          catch (e) { transferable.close(); pending.delete(id); reject(e); }
+        });
+      })().catch(async e => {
         if (signal.aborted) throw e;
-        close(); return new Promise(resolve => canvas.toBlob(resolve, "image/jpeg", 0.95));
-      });
+        close();
+        const fallback = document.createElement("canvas");
+        fallback.width = bitmap.width; fallback.height = bitmap.height;
+        try {
+          fallback.getContext("2d").drawImage(bitmap, 0, 0);
+          return await new Promise(resolve => fallback.toBlob(resolve, "image/jpeg", 0.95));
+        } finally { fallback.width = fallback.height = 0; }
+      }).finally(() => bitmap.close());
+      result.catch(() => {});
+      return { result };
     },
   };
 }
@@ -122,7 +167,8 @@ async function optimizedExport(options = {}) {
     if (!response.ok || result.error) throw new Error(result.error || "Export request failed");
     return result;
   };
-  let cacheId, sessionId, heartbeat, queue, originalProject, cacheStatus, imageBytes = 0, pendingPrefetch, encoder, readAhead;
+  let cacheId, sessionId, heartbeat, queue, originalProject, cacheStatus, imageBytes = 0, encoder, readAhead, frameReadAhead, pipeline;
+  let currentKeep = new Set();
   const images = new Map(), manifests = new Map(), readyManifests = new Map(), failedClips = new Set(), demanded = new Set();
   const cacheUrl = (route, query = "") => projectApi(`/api/export/cache/${route}`) + `&id=${cacheId}${query}`;
   const release = () => {
@@ -199,9 +245,11 @@ async function optimizedExport(options = {}) {
       if (m.fallback) return null;
       const index = cachedFrameIndex(m.times, time);
       if (index < 0 || time > m.times.at(-1) + (m.times.length > 1 ? m.times[1] - m.times[0] : 0.1) + 1e-5) {
-        fallback(c, "source time outside cached coverage"); return null;
+        if (!prefetch) fallback(c, "source time outside cached coverage");
+        return null;
       }
-      const key = m.key + ":" + index; keep.add(key);
+      const key = m.key + ":" + index;
+      if (!prefetch) keep.add(key);
       let item = images.get(key);
       if (!item) {
         evict(keep, m.width * m.height * 4);
@@ -211,9 +259,12 @@ async function optimizedExport(options = {}) {
         item.promise = (async () => {
           let img;
           try {
+            let tick = performance.now();
             const response = await fetch(cacheUrl("frame", `&key=${m.key}&index=${index}`), { signal: controller.signal });
             if (!response.ok) throw new Error("Cached source frame unavailable");
-            img = await createImageBitmap(await response.blob()); checked(); item.img = img; return img;
+            const blob = await response.blob(); sample("sourceFetch", performance.now() - tick);
+            tick = performance.now(); img = await createImageBitmap(blob); sample("sourceDecode", performance.now() - tick);
+            checked(); item.img = img; return img;
           } catch (e) { img?.close(); imageBytes -= item.bytes; images.delete(key); throw e; }
         })();
         images.set(key, item);
@@ -233,7 +284,7 @@ async function optimizedExport(options = {}) {
         await api(cacheUrl("drop"), { clipIds: ended.map(c => c.id) });
         for (const c of ended) dropped.add(c.id);
       }
-      optimizedSources = new Map(); const keep = new Set();
+      optimizedSources = new Map(); const keep = currentKeep = new Set();
       await Promise.all(videoClips.filter(c => activeAt(c, t)).map(async c => {
         const time = mediaTimeAt(c, t);
         if (eligible.has(c.id) && !failedClips.has(c.id)) {
@@ -261,6 +312,25 @@ async function optimizedExport(options = {}) {
     if (project.clips.some(c => isTrackEnabled(c.track) && c.props?.bgRemove)) await ensureBgSeg();
     queue = new OrderedFrameQueue(async blob => { const t = performance.now(); await api(`/api/export/frame?id=${sessionId}`, blob); sample("upload", performance.now() - t); });
     encoder = createSnapshotEncoder(controller.signal);
+    const snapshotDepth = Math.max(1, Math.min(2, Math.floor(64 * 1024 ** 2 / (project.width * project.height * 4))));
+    stats.snapshotDepth = snapshotDepth;
+    pipeline = new SnapshotPipeline(async canvas => {
+      const tick = performance.now(), job = await encoder.capture(canvas);
+      sample("snapshot", performance.now() - tick);
+      job.result = job.result.then(blob => { sample("jpeg", performance.now() - tick); return blob; });
+      return job;
+    }, async blob => {
+      if (!blob?.size) throw new Error("Canvas returned an empty frame");
+      const tick = performance.now(); await queue.push(blob); sample("queueWait", performance.now() - tick);
+    }, snapshotDepth);
+    frameReadAhead = new FrameReadAhead(async ({ clip, time }) => {
+      if (failedClips.has(clip.id) || dropped.has(clip.id)) return;
+      const tick = performance.now();
+      // Speculation may fail when a finished clip releases its lease. A demand
+      // read decides whether to fall back; speculation must not change pixels.
+      await imageFor(clip, time, currentKeep, true);
+      sample("prefetch", performance.now() - tick);
+    });
     const renderingStarted = performance.now();
     for (let f = 0; f < count; f++) {
       checked(); const t = f / fps; state.time = t;
@@ -269,30 +339,22 @@ async function optimizedExport(options = {}) {
       tick = performance.now(); await prepareFrameAssets(t); sample("assets", performance.now() - tick);
       tick = performance.now(); drawFrame(t); sample("composite", performance.now() - tick);
       tick = performance.now();
-      const prefetch = (async () => {
-        // Decode future sources concurrently with the immutable JPEG snapshot.
-        // Do not seek video elements or mutate the compositor during prefetch.
-        for (let offset = 1; offset <= 4 && f + offset < count; offset++) {
-          const next = (f + offset) / fps;
-          for (const c of videoClips) if (activeAt(c, next) && eligible.has(c.id) && !failedClips.has(c.id)) {
-            try { const prefetchStarted = performance.now(); await imageFor(c, mediaTimeAt(c, next), keep, true); sample("prefetch", performance.now() - prefetchStarted); } catch (e) { checked(); fallback(c, e.message); }
-          }
-        }
-      })();
-      pendingPrefetch = prefetch; prefetch.catch(() => {});
-      const blob = await encoder.encode(els.preview);
-      if (!blob?.size) throw new Error("Canvas returned an empty frame");
-      sample("jpeg", performance.now() - tick);
-      tick = performance.now(); await queue.push(blob); sample("queueWait", performance.now() - tick);
+      const plan = [];
+      for (let offset = 1; offset <= 4 && f + offset < count; offset++) {
+        const next = (f + offset) / fps;
+        for (const c of videoClips) if (activeAt(c, next) && eligible.has(c.id) && !failedClips.has(c.id))
+          plan.push({ key: `${c.id}:${f + offset}`, clip: c, time: mediaTimeAt(c, next) });
+      }
+      frameReadAhead.update(plan);
+      await pipeline.push(els.preview); sample("pipeline", performance.now() - tick);
       stats.frames++;
-      await prefetch;
       evict(keep);
       const pct = (f + 1) / count * 100;
       els.exportProgress.style.width = pct.toFixed(1) + "%";
       els.exportTitle.textContent = `Rendering… ${pct.toFixed(0)}%`;
       els.exportNote.textContent = `Cached video frames · ${new Set([...Object.keys(cacheStatus.stats.fallbacks), ...failedClips]).size} compatibility fallbacks · You can switch tabs.`;
     }
-    await queue.finish(); stats.peakQueueBytes = queue.peakBytes;
+    await pipeline.finish(); await queue.finish(); await frameReadAhead.stop(); stats.peakQueueBytes = queue.peakBytes;
     stats.phases.renderMs = performance.now() - renderingStarted;
     cacheStatus = await api(cacheUrl("status")); stats.cache = cacheStatus.stats;
     for (const s of Object.values(stats.samples)) {
@@ -314,7 +376,7 @@ async function optimizedExport(options = {}) {
     else if (message !== "cancelled") alert("Optimized export failed: " + message);
   } finally {
     clearInterval(heartbeat); release(); encoder?.close();
-    controller.abort(); await readAhead?.stop(); await pendingPrefetch?.catch(() => {}); optimizedAbort = null; optimizedSources = null;
+    controller.abort(); await readAhead?.stop(); await frameReadAhead?.stop(); await pipeline?.settle(); optimizedAbort = null; optimizedSources = null;
     for (const item of images.values()) if (item.img) item.img.close();
     images.clear();
     if (optimizedMaskCanvas) { optimizedMaskCanvas.width = 0; optimizedMaskCanvas.height = 0; optimizedMaskCanvas = null; }
@@ -326,4 +388,4 @@ async function optimizedExport(options = {}) {
     if (runtime.pendingSync) syncFromServer();
   }
 }
-if (typeof module !== "undefined") module.exports = { OrderedFrameQueue, cachedFrameIndex, sourceBlockPlan, sourceReadAhead, SourceReadAhead };
+if (typeof module !== "undefined") module.exports = { OrderedFrameQueue, cachedFrameIndex, sourceBlockPlan, sourceReadAhead, SourceReadAhead, FrameReadAhead, SnapshotPipeline, createSnapshotEncoder };

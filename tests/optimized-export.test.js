@@ -6,7 +6,7 @@ const os = require("node:os");
 const path = require("node:path");
 const { spawnSync } = require("node:child_process");
 const { ExportCache, frameIndex, localMedia, supported, validFrameTimes, command } = require("../export-cache");
-const { OrderedFrameQueue, cachedFrameIndex, sourceReadAhead, SourceReadAhead } = require("../optimized-export");
+const { OrderedFrameQueue, cachedFrameIndex, sourceReadAhead, SourceReadAhead, FrameReadAhead, SnapshotPipeline } = require("../optimized-export");
 const ffmpeg = spawnSync("ffmpeg", ["-version"], { stdio: "ignore" }).status === 0;
 async function fixture(t, limit, quantized = false) {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "fablecut-cache-test-"));
@@ -191,10 +191,11 @@ test("read-ahead follows cuts and backwards source jumps, with bounded future cl
     { id: "later", start: 7.51, in: 350, duration: 1 },
   ];
   const plan = sourceReadAhead(clips, 0, 30);
-  assert.deepEqual(plan.map(r => r.clip.id), ["current", "near", "far", "backward"]);
+  assert.deepEqual(plan.map(r => r.clip.id), ["current", "near", "far"]);
   assert.equal(Math.floor(plan[1].time / 5), 12);
   assert.equal(Math.floor(plan[2].time / 5), 57);
-  assert.equal(Math.floor(plan[3].time / 5), 46);
+  const afterCut = sourceReadAhead(clips, 3.51, 30);
+  assert.equal(Math.floor(afterCut.find(r => r.clip.id === "backward").time / 5), 46);
   // The first output sample after a fractional cut may be in the next block.
   const fractional = sourceReadAhead([{ id: "fractional", start: 1.001, in: 4.99, duration: 1 }], 0, 30);
   assert.equal(Math.floor(fractional[0].time / 5), 1);
@@ -211,6 +212,86 @@ test("speculative block preparation never blocks advancing the render timeline",
   finish(); await new Promise(r => setImmediate(r)); assert.deepEqual(loaded, ["next", "new-cut"]);
   const stopped = scheduler.stop(); finish(); await stopped;
   scheduler.update(["after-stop"]); await Promise.resolve(); assert.equal(loaded.length, 2);
+});
+
+test("frame read-ahead bounds concurrent decodes and replaces obsolete plans", async () => {
+  const started = [], releases = new Map();
+  const scheduler = new FrameReadAhead(item => {
+    started.push(item.key);
+    return new Promise(resolve => releases.set(item.key, resolve));
+  });
+  assert.equal(scheduler.update([1, 2, 3].map(key => ({ key }))), undefined);
+  await Promise.resolve(); assert.deepEqual(started, [1, 2]);
+  scheduler.update([2, 4, 5].map(key => ({ key })));
+  releases.get(1)(); await new Promise(r => setImmediate(r));
+  assert.deepEqual(started, [1, 2, 4]);
+  const stopped = scheduler.stop();
+  releases.get(2)(); releases.get(4)(); await stopped;
+  scheduler.update([{ key: 6 }]); await Promise.resolve();
+  assert.deepEqual(started, [1, 2, 4]);
+});
+
+test("snapshot pipeline overlaps encoding, bounds snapshots and writes in frame order", async () => {
+  const captured = [], writes = [], complete = new Map();
+  const pipeline = new SnapshotPipeline(async value => {
+    captured.push(value);
+    return { result: new Promise(resolve => complete.set(value, resolve)) };
+  }, async value => writes.push(value));
+  await pipeline.push(0); await pipeline.push(1);
+  complete.get(1)(1);
+  const next = pipeline.push(2);
+  await Promise.resolve(); assert.deepEqual(captured, [0, 1]); assert.deepEqual(writes, []);
+  complete.get(0)(0); await next;
+  assert.deepEqual(captured, [0, 1, 2]);
+  complete.get(2)(2); await pipeline.finish(); assert.deepEqual(writes, [0, 1, 2]);
+  const broken = new SnapshotPipeline(async () => ({ result: Promise.reject(new Error("encode failed")) }), async () => {});
+  await broken.push(0); await assert.rejects(broken.finish(), /encode failed/); await broken.settle();
+});
+
+test("worker failure encodes the original snapshot after the preview has advanced", async () => {
+  const vm = require("node:vm"), source = require("node:fs").readFileSync(path.join(__dirname, "../optimized-export.js"), "utf8");
+  let worker, closed = 0;
+  const sandbox = { module: { exports: {} }, OffscreenCanvas: function () {},
+    Worker: class { constructor() { worker = this; } postMessage(data) { this.job = data; } terminate() {} },
+    createImageBitmap: async canvas => ({ width: 10, height: 10, value: canvas.value, close() { closed++; } }),
+    document: { createElement: () => {
+      const canvas = { getContext: () => ({ drawImage: bitmap => { canvas.value = bitmap.value; } }),
+        toBlob: resolve => resolve({ size: 1, value: canvas.value }) };
+      return canvas;
+    } },
+  };
+  vm.createContext(sandbox); vm.runInContext(source, sandbox);
+  const controller = new AbortController(), encoder = sandbox.module.exports.createSnapshotEncoder(controller.signal);
+  const preview = { value: "frame 0" }, first = await encoder.capture(preview);
+  preview.value = "frame 1";
+  const second = await encoder.capture(preview); preview.value = "frame 2";
+  worker.onmessage({ data: { id: worker.job.id, error: "worker failed" } });
+  assert.equal((await first.result).value, "frame 0");
+  assert.equal((await second.result).value, "frame 1"); assert.equal(closed, 2);
+  encoder.close();
+});
+
+test("legacy Canvas encoding completes before the next snapshot can advance", async () => {
+  const { createSnapshotEncoder } = require("../optimized-export");
+  const controller = new AbortController(), encoder = createSnapshotEncoder(controller.signal);
+  let complete, captured = false;
+  const pending = encoder.capture({ toBlob(resolve) { complete = resolve; } }).then(job => { captured = true; return job; });
+  await Promise.resolve(); assert.equal(captured, false);
+  complete({ size: 1 }); assert.equal((await (await pending).result).size, 1);
+  encoder.close();
+});
+
+test("snapshot cancellation rejects pending work and releases its bitmap", async () => {
+  const vm = require("node:vm"), source = require("node:fs").readFileSync(path.join(__dirname, "../optimized-export.js"), "utf8");
+  let created = 0, closed = 0, terminated = 0;
+  const sandbox = { module: { exports: {} }, OffscreenCanvas: function () {},
+    Worker: class { postMessage() {} terminate() { terminated++; } },
+    createImageBitmap: async () => { created++; return { close() { closed++; } }; },
+  };
+  vm.createContext(sandbox); vm.runInContext(source, sandbox);
+  const controller = new AbortController(), encoder = sandbox.module.exports.createSnapshotEncoder(controller.signal);
+  const job = await encoder.capture({}); controller.abort();
+  await assert.rejects(job.result, /stopped/); assert.equal(closed, created); assert.equal(terminated, 1);
 });
 test("growing extraction evicts unleased blocks before the disk budget fills", { skip: !ffmpeg }, async t => {
   const { cache, id, pp, file } = await fixture(t);
