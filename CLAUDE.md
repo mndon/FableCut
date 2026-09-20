@@ -653,9 +653,38 @@ renders each frame with the normal compositor — including SVG frames, keys and
 AI masks — streams JPEG frames + an offline WAV mix to the server, ffmpeg
 encodes a CRF-18 faststart MP4 into the project's `exports/`) and **Realtime**
 (MediaRecorder fallback), plus opt-in **Optimized** (see below). CLI export automatically starts the local server if needed and requires ffmpeg
-and Chrome or Chromium on the machine (override discovery with `--browser` or
-`CHROME_PATH`). It launches the editor headlessly and therefore uses the exact
-same compositor as preview instead of reimplementing the timeline in ffmpeg.
+on PATH. Browser selection is explicit `--browser` / `CHROME_PATH`, then the
+managed cache, then an existing system Chrome/Chromium. If none is available,
+the CLI automatically downloads pinned Chrome for Testing 153.0.8010.52 from
+the npmmirror mirror (`https://cdn.npmmirror.com/binaries/chrome-for-testing`)
+over HTTPS, extracts and checks it, and caches it under
+`~/.tik-editvideo-cli/browsers/<version>/<platform>/`. The first download requires
+network access; subsequent exports reuse the installation without downloading.
+Download/extraction progress goes to stderr, preserving JSON results on stdout.
+Successful CLI exports return `{ok, engine, browser, output, sizeBytes, elapsedSeconds,
+durationSeconds?, width?, height?, fps?}`: `browser` is the actual executable path,
+`output` is the absolute MP4 path, and metadata is probed from the finished file.
+`elapsedSeconds` is wall-clock export time, rounded to milliseconds, including
+local server startup/reuse, browser preparation, rendering, file saving, metadata
+probing and browser cleanup; it is separate from the video's `durationSeconds`.
+If ffprobe is unavailable or probing fails, duration/dimensions/fps are omitted;
+the successful export still returns its path and byte size. CLI output omits
+internal project URLs and detailed performance metrics.
+An invalid explicit browser path is an error, not a silent fallback.
+`FABLECUT_BROWSER_DOWNLOAD_BASE_URL` overrides this default with a trusted HTTPS
+source using the same `<version>/<platform>/chrome-<platform>.zip` layout.
+For Google's upstream source, set it to
+`https://storage.googleapis.com/chrome-for-testing-public`.
+Automatic downloads support macOS x64/arm64, Linux x64/arm64 and Windows x64/ia32;
+other platforms require an explicit compatible browser. Linux still needs the
+Chrome system libraries. Failed installs are discarded; only fully extracted,
+CRC-checked and launch-tested installations are published. An interrupted process
+may leave an unused `.install-*` directory, which can be removed. To reset a
+damaged cache, remove its `<version>/<platform>` directory and retry export.
+No npm runtime dependencies or external unzip tools are added. ffmpeg and
+ffprobe are not downloaded automatically. The CLI launches the editor headlessly
+and therefore uses the exact same compositor as preview instead of reimplementing
+the timeline in ffmpeg.
 
 ### Optimized export (opt-in)
 
@@ -726,7 +755,7 @@ cache endpoints (`?project=<id>`, opaque session `id`):
 
 Optimized passes `{engine:"optimized",cacheId}` in addition to existing export
 begin fields, linking the encoder lifetime to the cache lease. Export end
-accepts optional `{metrics}`; completion status and CLI output include these
+accepts optional `{metrics}`; the completion status API includes these
 metrics (phase times, approximate P95 timing buckets, cache hits/misses and
 fallback reasons, buffer high-water marks, server RSS, total elapsed time and
 `cutSourceWait` timing at the first output frame of each clip).
@@ -736,6 +765,10 @@ overlapping samples must not be added together as total elapsed time.
 Existing Fast clients can continue sending an empty end body.
 
 Run `node --test tests/*.test.js` for regression tests. After syncing the CLI
+runtime, `FABLECUT_BROWSER_INSTALL_TEST=1 node --test --test-name-pattern='export starts the server' tests/cli-local.test.js`
+downloads a real browser into an isolated cache with system discovery disabled,
+then verifies CLI Fast/Optimized MP4 exports using that cache. It requires network
+access, ffmpeg and ffprobe, but no preinstalled Chrome. After syncing the CLI
 runtime, `FABLECUT_BROWSER_TEST=1 node --test tests/export-browser.test.js`
 compares real Fast/Optimized MP4s, including audio and frame counts. Add
 `FABLECUT_EXPORT_BENCH=1` for three cold/warm 60-second 1080p runs and a median

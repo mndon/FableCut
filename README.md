@@ -270,9 +270,32 @@ data directory for this check. `--host` / `--port` override `HOST` / `PORT`, wit
 defaults `127.0.0.1:7777`. `server start` remains available for foreground use.
 
 Export automatically starts the local service and uses the same browser
-compositor as preview. It requires ffmpeg and Chrome/Chromium; use `--browser`
-or `CHROME_PATH` to select a browser. The package has no npm runtime dependencies
-and serves its bundled runtime independently of the source checkout.
+compositor as preview. It requires ffmpeg on PATH (Optimized also needs ffprobe).
+Chrome no longer needs to be installed manually: selection uses `--browser` /
+`CHROME_PATH`, then the managed cache, then system Chrome/Chromium. If none is
+available, the CLI downloads pinned Chrome for Testing 153.0.8010.52 over HTTPS
+from `https://cdn.npmmirror.com/binaries/chrome-for-testing` by default
+and caches it in `~/.tik-editvideo-cli/browsers/<version>/<platform>/`. The first
+download needs network access; later exports reuse it. Progress goes to stderr;
+stdout remains JSON. An invalid explicit path produces an error.
+
+Successful export output contains `ok`, `engine`, `browser` (the executable path),
+`output` (the absolute MP4 path), `sizeBytes`, and `elapsedSeconds` (total export
+time in seconds, rounded to milliseconds, including server/browser preparation,
+rendering, file saving, metadata probing and browser cleanup). When ffprobe can read the finished
+file, it also includes `durationSeconds`, `width`, `height`, and `fps`. Detailed
+performance metrics and internal project URLs are omitted from CLI output.
+
+Automatic browser setup supports macOS and Linux x64/arm64, and Windows x64/ia32.
+Linux still requires Chrome system libraries; unsupported platforms can use a
+compatible browser via `--browser`. Set `FABLECUT_BROWSER_DOWNLOAD_BASE_URL`
+to override the default with a trusted HTTPS source retaining the
+`<version>/<platform>/chrome-<platform>.zip` layout. Google's upstream base is
+`https://storage.googleapis.com/chrome-for-testing-public`. Failed installs are discarded.
+To reset a damaged cache, remove its version/platform directory and retry.
+ffmpeg/ffprobe remain external prerequisites. The package has no npm runtime
+dependencies, needs no external unzip utility, and serves its bundled editor
+runtime independently of the source checkout.
 
 The `tik-edit-video` skill delivers a preview link after verification and invites
 adjustments. It exports only on an explicit request, such as “导出最终视频”.
@@ -470,7 +493,7 @@ leaving CPU capacity for browser decoding and x264 without changing quality.
 Final audio muxing preserves every submitted video frame, including the tail
 when the timeline duration is not an exact multiple of the frame interval.
 
-The UI shows export phases and completion time. CLI results add `metrics` with
+The UI shows export phases and completion time. The completion status API includes `metrics` with
 phase timings, cache hits/misses, compatibility fallback reasons, resource
 high-water marks and total time. Initial preparation can outweigh the benefit
 on short projects; repeat exports reuse source frames. See [CLAUDE.md](CLAUDE.md#optimized-export-opt-in)

@@ -153,12 +153,20 @@ test("MCP and CLI patches share the project transaction lock", async t => {
   assert.equal(doc.clips.length, 10); assert.equal(doc.revision, 10);
 });
 
-test("export starts the server and renders a real MP4 with the browser compositor", { timeout: 150000 }, async t => {
+test("export starts the server and renders a real MP4 with the browser compositor", { timeout: process.env.FABLECUT_BROWSER_INSTALL_TEST === "1" ? 1200000 : 150000 }, async t => {
   const { spawnSync } = require("node:child_process");
   const candidates = [process.env.CHROME_PATH, "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe", "google-chrome", "chromium"].filter(Boolean);
+  const managed = process.env.FABLECUT_BROWSER_INSTALL_TEST === "1";
   const browser = candidates.find(candidate => path.isAbsolute(candidate) ? fs.existsSync(candidate) : spawnSync(candidate, ["--version"]).status === 0);
-  if (!browser || spawnSync("ffmpeg", ["-version"]).status !== 0 || spawnSync("ffprobe", ["-version"]).status !== 0) { t.skip("Requires Chrome/Chromium, ffmpeg and ffprobe"); return; }
+  if ((!managed && !browser) || spawnSync("ffmpeg", ["-version"]).status !== 0 || spawnSync("ffprobe", ["-version"]).status !== 0) { t.skip("Requires Chrome/Chromium, ffmpeg and ffprobe"); return; }
   const { run, home, dataDir } = fixture(t);
+  if (managed) {
+    // Exercise real download/extraction/launch with system discovery disabled.
+    // CLI export below must discover this cache without an explicit browser.
+    await require("../cli/lib/browser").ensureBrowser(undefined, { cacheRoot: path.join(dataDir, "browsers"), candidates: [], env: {} });
+  }
+  const browserArgs = managed ? [] : ["--browser", browser];
+  const exportEnv = managed ? { CHROME_PATH: "" } : {};
   const spare = await port(t); const p = spare.port; await new Promise(resolve => spare.server.close(resolve));
   json(await run(["create-project", "--name", "Render", "--id", "render"]));
   json(await run(["patch-project", "--project", "render", "--ops", JSON.stringify([
@@ -169,11 +177,17 @@ test("export starts the server and renders a real MP4 with the browser composito
   const output = path.join(home, "render.mp4");
   let result;
   try {
-    result = await run(["export", "--project", "render", "--output", output, "--port", String(p), "--browser", browser, "--timeout", "60"]);
+    result = await run(["export", "--project", "render", "--output", output, "--port", String(p), ...browserArgs, "--timeout", "60"], exportEnv);
     if (result.code === 0) {
       const optimizedOutput = path.join(home, "optimized.mp4");
-      const optimized = json(await run(["export", "--project", "render", "--engine", "optimized", "--output", optimizedOutput, "--port", String(p), "--browser", browser, "--timeout", "60"]));
-      assert.equal(optimized.output, optimizedOutput); assert.equal(optimized.metrics.engine, "optimized"); assert.equal(optimized.metrics.frames, 10);
+      const optimized = json(await run(["export", "--project", "render", "--engine", "optimized", "--output", optimizedOutput, "--port", String(p), ...browserArgs, "--timeout", "60"], exportEnv));
+      assert.equal(optimized.output, optimizedOutput); assert.equal(optimized.engine, "optimized");
+      assert.equal(optimized.sizeBytes, fs.statSync(optimizedOutput).size);
+      assert.equal(optimized.width, 160); assert.equal(optimized.height, 90); assert.equal(optimized.fps, 10);
+      assert.ok(optimized.durationSeconds >= 1);
+      assert.ok(Number.isFinite(optimized.elapsedSeconds) && optimized.elapsedSeconds > 0);
+      assert.ok(path.isAbsolute(optimized.browser) && fs.existsSync(optimized.browser));
+      assert.deepEqual(Object.keys(optimized).sort(), ["ok", "engine", "browser", "output", "sizeBytes", "durationSeconds", "width", "height", "fps", "elapsedSeconds"].sort());
       const frames = JSON.parse(spawnSync("ffprobe", ["-v", "error", "-show_streams", "-of", "json", optimizedOutput], { encoding: "utf8" }).stdout);
       assert.equal(Number(frames.streams[0].nb_frames), 10);
     }
@@ -182,7 +196,14 @@ test("export starts the server and renders a real MP4 with the browser composito
     try { const status = await (await fetch(`http://127.0.0.1:${p}/api/status`)).json(); process.kill(status.pid); } catch {}
     await new Promise(resolve => setTimeout(resolve, 200));
   }
-  assert.equal(json(result).output, output);
+  const summary = json(result);
+  assert.equal(summary.output, output); assert.equal(summary.engine, "fast");
+  assert.equal(summary.sizeBytes, fs.statSync(output).size);
+  assert.equal(summary.width, 160); assert.equal(summary.height, 90); assert.equal(summary.fps, 10);
+  assert.ok(summary.durationSeconds >= 1);
+  assert.ok(Number.isFinite(summary.elapsedSeconds) && summary.elapsedSeconds > 0);
+  assert.ok(path.isAbsolute(summary.browser) && fs.existsSync(summary.browser));
+  assert.ok(!("metrics" in summary) && !("src" in summary));
   const info = JSON.parse(spawnSync("ffprobe", ["-v", "error", "-show_streams", "-show_format", "-of", "json", output], { encoding: "utf8" }).stdout);
   const video = info.streams.find(stream => stream.codec_type === "video");
   assert.equal(video.width, 160); assert.equal(video.height, 90); assert.equal(Number(video.nb_frames), 10);
@@ -195,5 +216,12 @@ test("export rejects an unknown engine before starting the server", async t => {
   const { run, dataDir } = fixture(t);
   const result = await run(["export", "--project", "missing", "--engine", "invalid"]);
   assert.notEqual(result.code, 0); assert.match(result.stderr, /--engine must be fast or optimized/);
+  assert.ok(!fs.existsSync(path.join(dataDir, "server.log")));
+});
+
+test("export requires a value for an explicit browser before starting the server", async t => {
+  const { run, dataDir } = fixture(t);
+  const result = await run(["export", "--project", "missing", "--browser"]);
+  assert.notEqual(result.code, 0); assert.match(result.stderr, /Missing required option --browser/);
   assert.ok(!fs.existsSync(path.join(dataDir, "server.log")));
 });

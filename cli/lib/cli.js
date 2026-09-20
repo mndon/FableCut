@@ -226,24 +226,6 @@ function compactProject(id, project) {
 
 const KIND_BY_EXT = new Map(Object.entries({ ".mp4":"video", ".webm":"video", ".mov":"video", ".mkv":"video", ".m4v":"video", ".avi":"video", ".mp3":"audio", ".wav":"audio", ".ogg":"audio", ".m4a":"audio", ".aac":"audio", ".flac":"audio", ".png":"image", ".jpg":"image", ".jpeg":"image", ".gif":"image", ".webp":"image", ".svg":"svg" }));
 
-function findBrowser(explicit) {
-  const candidates = [explicit, process.env.CHROME_PATH,
-    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-    "/Applications/Chromium.app/Contents/MacOS/Chromium",
-    "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
-    "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe",
-    "google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "chrome"]
-    .filter(Boolean);
-  for (const candidate of candidates) {
-    if (path.isAbsolute(candidate)) { if (fs.existsSync(candidate)) return candidate; }
-    else {
-      const probe = spawnSync(process.platform === "win32" ? "where" : "which", [candidate], { encoding: "utf8" });
-      if (probe.status === 0) return probe.stdout.split(/\r?\n/)[0].trim();
-    }
-  }
-  throw new CliError("Chrome/Chromium was not found; install it or pass --browser <path>");
-}
-
 function delay(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
 async function download(client, src, target, force) {
   if (fs.existsSync(target) && !force) throw new CliError(`Output already exists: ${target} (pass --force to replace it)`);
@@ -257,7 +239,28 @@ async function download(client, src, target, force) {
   } catch (error) { fs.rmSync(temporary, { force: true }); throw error; }
 }
 
-async function exportProject(client, options) {
+function exportFileInfo(file) {
+  const info = { sizeBytes: fs.statSync(file).size };
+  const probe = spawnSync("ffprobe", ["-v", "error", "-select_streams", "v:0",
+    "-show_entries", "format=duration:stream=width,height,avg_frame_rate", "-of", "json", file],
+  { encoding: "utf8", timeout: 15000, windowsHide: true });
+  // Fast export can work without ffprobe. Metadata is optional; a probe failure
+  // must not turn an already successful export into an error.
+  if (probe.status === 0) {
+    try {
+      const data = JSON.parse(probe.stdout), video = data.streams?.[0];
+      const duration = Number(data.format?.duration);
+      if (Number.isFinite(duration) && duration >= 0) info.durationSeconds = duration;
+      if (video?.width > 0 && video?.height > 0) { info.width = video.width; info.height = video.height; }
+      const [numerator, denominator] = String(video?.avg_frame_rate || "").split("/").map(Number);
+      const fps = numerator / denominator;
+      if (Number.isFinite(fps) && fps > 0) info.fps = Math.round(fps * 1000) / 1000;
+    } catch {}
+  }
+  return info;
+}
+
+async function exportProject(client, options, started) {
   const engine = options.engine === undefined ? "fast" : options.engine;
   if (!["fast", "optimized"].includes(engine)) throw new CliError("--engine must be fast or optimized");
   const projectId = requireOption(options, "project");
@@ -271,7 +274,7 @@ async function exportProject(client, options) {
   const timeoutSeconds = Number(options.timeout || 3600);
   if (!Number.isFinite(timeoutSeconds) || timeoutSeconds <= 0) throw new CliError("--timeout must be a positive number of seconds");
   if (fs.existsSync(output) && !options.force) throw new CliError(`Output already exists: ${output} (pass --force to replace it)`);
-  const browserPath = findBrowser(options.browser === true ? undefined : options.browser);
+  const browserPath = await require("./browser").ensureBrowser(options.browser);
   const requestId = require("crypto").randomBytes(16).toString("hex");
   const profile = fs.mkdtempSync(path.join(os.tmpdir(), "tik-editvideo-cli-chrome-"));
   const url = new URL(client.base.href);
@@ -289,7 +292,7 @@ async function exportProject(client, options) {
   let stderr = "";
   chrome.stderr.on("data", (chunk) => { stderr = (stderr + chunk).slice(-4000); });
   const deadline = Date.now() + timeoutSeconds * 1000;
-  let status;
+  let status, fileInfo;
   try {
     while (Date.now() < deadline) {
       await delay(500);
@@ -302,13 +305,15 @@ async function exportProject(client, options) {
     }
     if (!status || status.state !== "complete") throw new CliError(`Export timed out after ${timeoutSeconds} seconds`);
     await download(client, status.src, output, !!options.force);
-    console.log(JSON.stringify({ ok: true, project: projectId, output, src: status.src, ...(status.metrics ? { metrics: status.metrics } : {}) }, null, 2));
+    fileInfo = exportFileInfo(output);
   } finally {
     if (chrome.exitCode === null) chrome.kill();
     const killTimer = setTimeout(() => chrome.kill("SIGKILL"), 3000);
     try { await closed; } finally { clearTimeout(killTimer); }
     fs.rmSync(profile, { recursive: true, force: true });
   }
+  const elapsedSeconds = Math.round(Number(process.hrtime.bigint() - started) / 1e6) / 1000;
+  console.log(JSON.stringify({ ok: true, engine, browser: browserPath, output, ...fileInfo, elapsedSeconds }, null, 2));
 }
 
 function printHelp() {
@@ -330,7 +335,11 @@ Editing works without a server. status starts a background preview server if nee
 export also starts it automatically. server start runs in the foreground.
 Storage is fixed at .tik-editvideo-cli inside the OS user home directory.
 HOST / PORT configure the local server (default 127.0.0.1:7777).
-CHROME_PATH selects Chrome/Chromium for export. Export also requires ffmpeg.`);
+--browser / CHROME_PATH selects Chrome/Chromium for export. Otherwise a cached or
+system browser is used; if missing, Chrome for Testing is downloaded automatically.
+Default download mirror: https://cdn.npmmirror.com/binaries/chrome-for-testing
+FABLECUT_BROWSER_DOWNLOAD_BASE_URL overrides the HTTPS browser download base.
+Export requires ffmpeg; optimized also requires ffprobe.`);
 }
 
 async function main(argv = process.argv.slice(2)) {
@@ -411,10 +420,12 @@ async function main(argv = process.argv.slice(2)) {
     catch (error) { fs.rmSync(target, { force: true }); throw error; }
     print({ ok: true, project: id, revision: project.revision, media });
   } else if (command === "export") {
+    const started = process.hrtime.bigint();
     if (options.engine !== undefined && !["fast", "optimized"].includes(options.engine)) throw new CliError("--engine must be fast or optimized");
     requireOption(options, "project");
+    if (options.browser !== undefined) requireOption(options, "browser");
     const status = await ensureServer(local, options);
-    await exportProject(new ExportClient(status.url), options);
+    await exportProject(new ExportClient(status.url), options, started);
   }
 }
 
