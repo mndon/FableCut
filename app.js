@@ -3129,8 +3129,8 @@ function renderInspector(lite) {
       ${row("Glow color", `<input type="color" data-k="glowColor" value="${p.glowColor || p.color}">
         <button class="btn tiny${p.glowColor ? "" : " toggle on"}" data-action="glow-auto" title="${uiAttr("Glow uses the text color")}">${uiText("auto")}</button>`, "", "glowColor")}
     </div>
-    <div class="insp-section"><h3>${uiText("Title & caption")}</h3>
-      ${row("Title style", `<button type="button" class="btn tiny style-picker-btn" data-style-open title="${uiAttr("Pick a style — hover to preview it live")}">${uiText((TITLE_STYLES[c.styleName] || {}).label || "Choose…")} ▾</button>
+    <div class="insp-section"><h3>${uiText("Text")}</h3>
+      ${row("Text style", `<button type="button" class="btn tiny style-picker-btn" data-style-open title="${uiAttr("Pick a style — hover to preview it live")}">${uiText((TITLE_STYLES[c.styleName] || {}).label || "Choose…")} ▾</button>
         <button class="btn tiny" data-action="title-shuffle" title="${uiAttr("Random style")}">${uiText("Shuffle")}</button>`)}
       ${row("Animation", `<select data-k="textAnim">${TEXT_ANIMS.map((a) => `<option value="${a}" ${a === p.textAnim ? "selected" : ""}>${uiText(a)}</option>`).join("")}</select>`, "", "textAnim")}
       ${slider("wordRate", 0.05, 0.6, 0.01, p.wordRate, "s")}

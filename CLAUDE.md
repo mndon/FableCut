@@ -404,10 +404,11 @@ and expiry are controlled by the ASR service. Existing projects may omit it.
 | `wordRate` | 0.15 | seconds per word (typewriter: /4, letter-pop: /3 per character); also staggers `clip-reveal`/`zoom-in`/`rise-mask` per line |
 | `fontCutSet` | (curated) | array of font family names cycled by `font-cut`, e.g. `["Anton","Bebas Neue","Archivo Black","Oswald"]`; each is auto-loaded |
 
-**Title styles (one-tap cohesive looks).** Text clips created in the UI now
+**Text styles (one-tap cohesive looks).** Use **+ Text / + 文本** to add a text
+clip at the playhead. Text clips created in the UI
 rotate through curated styles so titles vary instead of all looking basic (the
 old flat `Segoe UI` / no-animation default). Each style bundles a **different
-font**, placement and animation. Apply one in the inspector (Title style
+font**, placement and animation. Apply one in the inspector (Text style
 dropdown + Shuffle), or reproduce it from an agent by writing the same props:
 
 | Style | Font | Look |

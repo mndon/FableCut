@@ -137,7 +137,8 @@ same time.
 
 **Text**
 
-- **Title styles** — one-tap cohesive looks (Impact, Elegant, Kinetic cut, Neon,
+- **+ Text / + 文本** — add text at the playhead for titles, captions, or labels
+- **Text styles** — one-tap cohesive looks (Impact, Elegant, Kinetic cut, Neon,
   Handwritten, Luxury, and more); new titles vary the font, placement and animation
   automatically instead of defaulting to one flat style
 - Kinetic captions: typewriter, word-pop, word-slide, karaoke, **letter-pop**,
