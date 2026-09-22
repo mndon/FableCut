@@ -154,7 +154,8 @@ same time.
   (rhythmic typeface cuts), **rise-mask**
 - **Neon glow** for that TikTok caption look
 - Font editor: system fonts, drop-in custom fonts (`library/fonts/`), and **any
-  Google Font by name** — loaded automatically
+  Google Font by name** — loaded automatically. The family picker previews each
+  option in its own typeface, with grouped choices and keyboard navigation.
 - Gradient fills, outline, background pills, letter-spacing, line-height,
   weights, italic, uppercase, soft shadows
 - **Text layout** — horizontal Align: left / center / right / **justify**

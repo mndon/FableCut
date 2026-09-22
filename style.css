@@ -1949,3 +1949,9 @@ body.file-drag::after {
   z-index: 99;
   pointer-events: none;
 }
+
+/* Font-family previews use real DOM options instead of an OS-native popup. */
+.font-menu { box-sizing: border-box; }
+.font-group-label { padding: 7px 10px 4px; font-size: 11px; color: var(--dim); }
+.font-opt { overflow: hidden; text-overflow: ellipsis; font-size: 18px; line-height: 1.5; }
+.font-opt.active { outline: 1px solid #7b6cff88; outline-offset: -1px; background: #7b6cff26; }

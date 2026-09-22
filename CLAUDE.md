@@ -228,6 +228,9 @@ Reusable assets, visible in the editor's left-panel tabs and never copied:
   e.g. `{ "id":"m_x", "name":"whoosh.mp3", "kind":"audio", "src":"/library/sfx/whoosh.mp3" }`
   — then reference it from clips like any other media.
 - Dropping files into these folders live-refreshes the open UI.
+- The inspector font-family picker renders each name in its own typeface, grouped
+  by system, library and Google fonts. Google previews load as options become
+  visible. Arrow keys/Home/End navigate; Enter selects and Escape cancels.
 
 ## Authoring animated SVGs (the `svg` clip kind)
 

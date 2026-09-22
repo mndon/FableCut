@@ -1529,6 +1529,120 @@ function openStylePicker(anchor, c) {
   document.body.appendChild(menu);
   runtime.styleMenu = { close };
 }
+/* A DOM listbox keeps font previews consistent across native select platforms. */
+function openFontPicker(anchor, c) {
+  closeFontPicker();
+  const menu = document.createElement("div");
+  menu.className = "style-menu font-menu";
+  menu.id = "font-picker-menu";
+  menu.tabIndex = -1;
+  menu.setAttribute("role", "listbox");
+  menu.setAttribute("aria-label", uiText("Family"));
+  const options = [];
+  const seen = new Set();
+  const observer = new IntersectionObserver((entries) => {
+    for (const entry of entries) if (entry.isIntersecting) {
+      ensureFont(entry.target.dataset.font);
+      observer.unobserve(entry.target);
+    }
+  }, { root: menu, rootMargin: "60px" });
+  const addGroup = (label, fonts) => {
+    const unique = fonts.filter((font) => !seen.has(font) && seen.add(font));
+    if (!unique.length) return;
+    const group = document.createElement("div");
+    group.setAttribute("role", "group");
+    group.setAttribute("aria-label", uiText(label));
+    const heading = document.createElement("div");
+    heading.className = "font-group-label";
+    heading.textContent = uiText(label);
+    heading.setAttribute("aria-hidden", "true");
+    group.appendChild(heading);
+    for (const font of unique) {
+      const option = document.createElement("div");
+      option.className = "style-opt font-opt" + (font === c.props.font ? " on" : "");
+      option.id = `font-picker-option-${options.length}`;
+      option.setAttribute("role", "option");
+      option.setAttribute("aria-selected", String(font === c.props.font));
+      option.dataset.font = font;
+      option.textContent = option.title = font;
+      option.style.fontFamily = `${JSON.stringify(font)}, sans-serif`;
+      option.addEventListener("click", () => choose(font));
+      options.push(option);
+      group.appendChild(option);
+      observer.observe(option);
+    }
+    menu.appendChild(group);
+  };
+  addGroup("System", SYSTEM_FONTS);
+  addGroup("Library fonts", runtime.customFonts);
+  addGroup("Google fonts", [...GOOGLE_FONTS, ...runtime.googleLoaded]);
+  addGroup("Family", [c.props.font]);
+  let active = Math.max(0, options.findIndex((option) => option.dataset.font === c.props.font));
+  function focusOption(index) {
+    options[active]?.classList.remove("active");
+    active = clamp(index, 0, options.length - 1);
+    const option = options[active];
+    option.classList.add("active");
+    menu.setAttribute("aria-activedescendant", option.id);
+    option.scrollIntoView({ block: "nearest" });
+    ensureFont(option.dataset.font);
+  }
+  function choose(font) {
+    if (font !== c.props.font) {
+      pushUndo();
+      c.props.font = font;
+      ensureFont(font);
+      state.dirtyTimeline = true;
+      scheduleSave();
+    }
+    close();
+    renderInspector();
+    els.inspector.querySelector("[data-font-open]")?.focus({ preventScroll: true });
+  }
+  function close() {
+    observer.disconnect();
+    menu.remove();
+    anchor.setAttribute("aria-expanded", "false");
+    anchor.removeAttribute("aria-controls");
+    document.removeEventListener("pointerdown", onOutside, true);
+    document.removeEventListener("scroll", onScroll, true);
+    window.removeEventListener("resize", close);
+    runtime.fontMenu = null;
+  }
+  const onOutside = (e) => { if (!menu.contains(e.target) && !anchor.contains(e.target)) close(); };
+  const onScroll = (e) => { if (!menu.contains(e.target)) close(); };
+  menu.addEventListener("keydown", (e) => {
+    e.stopPropagation();
+    if (e.key === "Tab") { close(); anchor.focus({ preventScroll: true }); return; }
+    e.preventDefault();
+    if (e.key === "Escape") { close(); anchor.focus({ preventScroll: true }); }
+    else if (e.key === "ArrowDown") focusOption(active + 1);
+    else if (e.key === "ArrowUp") focusOption(active - 1);
+    else if (e.key === "Home") focusOption(0);
+    else if (e.key === "End") focusOption(options.length - 1);
+    else if (e.key === "Enter" || e.key === " ") choose(options[active].dataset.font);
+    else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      const ordered = options.map((_, i) => (active + i + 1) % options.length);
+      const next = ordered.find((i) => options[i].dataset.font.toLowerCase().startsWith(e.key.toLowerCase()));
+      if (next !== undefined) focusOption(next);
+    }
+  });
+  document.body.appendChild(menu);
+  const r = anchor.getBoundingClientRect();
+  menu.style.width = Math.min(Math.max(r.width, 220), innerWidth - 16) + "px";
+  menu.style.maxHeight = Math.min(330, innerHeight - 16) + "px";
+  menu.style.left = clamp(r.left, 8, Math.max(8, innerWidth - menu.offsetWidth - 8)) + "px";
+  menu.style.top = clamp(r.bottom + 4, 8, Math.max(8, innerHeight - menu.offsetHeight - 8)) + "px";
+  anchor.setAttribute("aria-expanded", "true");
+  anchor.setAttribute("aria-controls", menu.id);
+  runtime.fontMenu = { close };
+  menu.focus({ preventScroll: true });
+  focusOption(active);
+  document.addEventListener("pointerdown", onOutside, true);
+  document.addEventListener("scroll", onScroll, true);
+  window.addEventListener("resize", close);
+}
+function closeFontPicker() { runtime.fontMenu?.close(); }
 function closeStylePicker() { if (runtime.styleMenu) runtime.styleMenu.close(); }
 /* Swap a clip's source media in place: position, trim, keyframes, transitions,
    props and name are all untouched. If the clip is part of a linkGroup (video
@@ -2962,6 +3076,7 @@ function focusTextContent() {
   input.scrollIntoView({ block: "nearest" });
 }
 function renderInspector(lite) {
+  if (!lite || !getClip(state.selId)) closeFontPicker();
   const c = getClip(state.selId);
   if (!c) {
     els.inspector.innerHTML = `<div class="inspector-empty">${uiText("Select a clip to edit its")}<br>${uiText("transform, effects & audio.")}</div>`;
@@ -3094,9 +3209,6 @@ function renderInspector(lite) {
     ${tsel("Out", "transOut", c.transitionOut)}
   </div>`;
   if (c.kind === "text") {
-    const fontGroup = (label, fonts) => fonts.length
-      ? `<optgroup label="${uiAttr(label)}">${fonts.map((f) => `<option ${f === p.font ? "selected" : ""}>${f}</option>`).join("")}</optgroup>` : "";
-    const known = [...SYSTEM_FONTS, ...runtime.customFonts, ...GOOGLE_FONTS, ...runtime.googleLoaded];
     html += `<div class="insp-section"><h3>${uiText("Text")}</h3>
       ${row("Content", `<textarea data-k="text">${escapeHtml(p.text)}</textarea>`, "", "text")}
       ${row(hasTextBox(p) && p.boxFit ? "Max size" : "Font size",
@@ -3115,12 +3227,7 @@ function renderInspector(lite) {
       ${sel("Direction", "direction", ["auto", "ltr", "rtl"], p.direction || "auto")}
     </div>
     <div class="insp-section"><h3>${uiText("Font")}</h3>
-      ${row("Family", `<select data-k="font">
-        ${fontGroup("System", SYSTEM_FONTS)}
-        ${fontGroup("Library fonts", runtime.customFonts)}
-        ${fontGroup("Google fonts", [...new Set([...GOOGLE_FONTS, ...runtime.googleLoaded])])}
-        ${known.includes(p.font) ? "" : `<option selected>${p.font}</option>`}
-      </select>`, "", "font")}
+      ${row("Family", `<button type="button" class="btn tiny style-picker-btn" data-font-open aria-haspopup="listbox" aria-expanded="false" aria-label="${uiAttr("Family")}">${escapeHtml(p.font)} ▾</button>`, "", "font")}
       ${row("Google font", `<input type="text" data-gfont placeholder="${uiAttr("Type any Google Font name…")}">
         <button class="btn tiny" data-action="gfont-load">${uiText("Load")}</button>`)}
       ${sel("Weight", "weight", [0, 300, 400, 500, 600, 700, 800, 900], p.weight)}
@@ -3232,6 +3339,21 @@ function renderInspector(lite) {
       scheduleSave(); renderInspector();
     });
   });
+  const fontButton = els.inspector.querySelector("[data-font-open]");
+  if (fontButton) {
+    fontButton.style.fontFamily = `${JSON.stringify(p.font)}, sans-serif`;
+    fontButton.addEventListener("click", () => {
+      if (runtime.fontMenu) closeFontPicker();
+      else openFontPicker(fontButton, c);
+    });
+    fontButton.addEventListener("keydown", (e) => {
+      e.stopPropagation();
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault();
+        if (!runtime.fontMenu) openFontPicker(fontButton, c);
+      }
+    });
+  }
   els.inspector.querySelectorAll("[data-style-open]").forEach((btn) => {
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
@@ -5320,7 +5442,8 @@ async function loadLibraryFonts() {
 function ensureFont(name) {
   if (!name || SYSTEM_FONTS.includes(name) || runtime.customFonts.includes(name)) return;
   if (runtime.googleLoaded.has(name)) return;
-  if (document.fonts.check(`16px "${name}"`)) return;
+  // FontFaceSet.check also returns true for missing families that use fallback.
+  // Track requested Google families explicitly instead.
   runtime.googleLoaded.add(name);
   const link = document.createElement("link");
   link.rel = "stylesheet";
