@@ -108,6 +108,14 @@ same time.
   replacing a clip's media re-syncs the linked channel clips to the new
   source's channel count, adding/dropping extras and new tracks as needed.
 
+- **Text editing** — new text starts with `Enter Text` and no animation, so it is
+  visible from its first frame, including at timeline zero. Choose animations
+  in the inspector when needed. While paused, click
+  preview text to select it and focus/select its inspector content field. Adding
+  text also focuses/selects its content. Clicking a timeline text clip keeps
+  Delete/Backspace available for deleting the clip. Drag to move it. Text clips omit the separate Name input and reuse edited content
+  as the clip name.
+
 **Look**
 
 - 14 one-click filter presets (cinematic, teal-orange, noir, vintage, cyberpunk, sunset, midnight…)

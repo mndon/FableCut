@@ -259,7 +259,7 @@ async function callTool(name, args) {
         tint: 0, blur: 0, grayscale: 0, sepia: 0, invert: 0, vignette: 0,
         shake: 0, shakeSpeed: 8, rgbSplit: 0, grain: 0,
         chromaKey: "", chromaTolerance: 26, chromaSoftness: 12, bgRemove: false,
-        text: "Title", fontSize: 72, color: "#ffffff", color2: "", font: "Segoe UI",
+        text: "Enter Text", fontSize: 72, color: "#ffffff", color2: "", font: "Segoe UI",
         bold: true, weight: 0, italic: false, uppercase: false, align: "center",
         letterSpacing: 0, lineHeight: 1.2, textShadow: 12, glow: 0, glowColor: "",
         strokeWidth: 0, strokeColor: "#000", bgColor: "#000", bgOpacity: 0,

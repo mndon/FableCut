@@ -63,7 +63,7 @@ const DEFAULT_PROPS = {
   shake: 0, shakeSpeed: 8,                     // handheld/impact camera shake (px)
   rgbSplit: 0,                                 // chromatic aberration (px)
   grain: 0,                                    // film grain (%)
-  text: "Title", fontSize: 72, color: "#ffffff", color2: "", font: "Segoe UI",
+  text: "Enter Text", fontSize: 72, color: "#ffffff", color2: "", font: "Segoe UI",
   bold: true, italic: false, weight: 0, align: "center",
   letterSpacing: 0, lineHeight: 1.2, uppercase: false, textShadow: 12,
   glow: 0, glowColor: "",                      // neon glow (glowColor defaults to fill)
@@ -1650,14 +1650,17 @@ function addTitle() {
   pushUndo();
   const c = {
     id: "c_" + uid(), mediaId: null, kind: "text", track: "V2",
-    start: state.time, in: 0, duration: 4, name: "Title",
+    start: state.time, in: 0, duration: 4, name: DEFAULT_PROPS.text,
     props: { ...DEFAULT_PROPS },
   };
   // interesting by default: rotate through the styles so titles vary
   runtime.titleStyleIdx = ((runtime.titleStyleIdx || 0) + 1) % STYLE_CYCLE.length;
   applyTitleStyle(c, STYLE_CYCLE[runtime.titleStyleIdx]);
+  // Manual text must be visible at its first frame; entrance animations start transparent.
+  c.props.textAnim = "none";
   project.clips.push(c);
   selectClip(c.id); scheduleSave();
+  focusTextContent();
 }
 function addAdjust() {
   pushUndo();
@@ -2950,6 +2953,14 @@ function pruneSelection() {
   syncBinSelectionFromTimeline();
 }
 const selectedClips = () => project.clips.filter((c) => state.selIds.has(c.id));
+function focusTextContent() {
+  if (getClip(state.selId)?.kind !== "text") return;
+  const input = els.inspector.querySelector('textarea[data-k="text"]');
+  if (!input) return;
+  input.focus({ preventScroll: true });
+  input.select();
+  input.scrollIntoView({ block: "nearest" });
+}
 function renderInspector(lite) {
   const c = getClip(state.selId);
   if (!c) {
@@ -2997,7 +3008,7 @@ function renderInspector(lite) {
   let html = (state.selIds.size > 1
     ? `<div class="insp-multi">${uiText("{count} clips selected — drag moves them together, Del deletes all. Fields below edit the primary (white-outlined) clip.", { count: state.selIds.size })}</div>`
     : "") + `<div class="insp-section"><h3>${uiText("Clip — {kind}", { kind: uiText(c.kind) })}</h3>
-    ${row("Name", `<input type="text" data-k="name" value="${escapeHtml(c.name)}">`)}
+    ${c.kind === "text" ? "" : row("Name", `<input type="text" data-k="name" value="${escapeHtml(c.name)}">`)}
     ${c.mediaId ? row("Source", `<button type="button" class="btn tiny style-picker-btn" data-media-open title="${uiAttr("Replace this clip's media — keeps position, trim, keyframes and effects")}">${escapeHtml((getMedia(c.mediaId) || {}).name || uiText("Missing media"))} ▾</button>`) : ""}
     ${row("Start (s)", `<input type="number" data-k="start" step="0.01" value="${c.start.toFixed(2)}">`)}
     ${row("Length (s)", `<input type="number" data-k="duration" step="0.01" value="${c.duration.toFixed(2)}">`)}
@@ -3157,6 +3168,7 @@ function renderInspector(lite) {
           if (!Object.keys(c.keyframes).length) c.keyframes = undefined;
           state.dirtyTimeline = true;
         }
+        if (k === "text" && c.kind === "text") c.name = c.props.text;
         if (k === "text" || k === "font") state.dirtyTimeline = true;
         if (k === "font") ensureFont(String(DEFAULT_PROPS.font));
       }
@@ -3192,7 +3204,7 @@ function renderInspector(lite) {
           state.dirtyTimeline = true;
         }
       }
-      else { c.props[k] = v; if (k === "text") state.dirtyTimeline = true; }
+      else { c.props[k] = v; if (k === "text") { c.name = String(v); state.dirtyTimeline = true; } }
       const valEl = els.inspector.querySelector(`[data-val="${k}"]`);
       if (valEl) valEl.textContent = input.value;
       scheduleSave();
@@ -4578,6 +4590,7 @@ els.preview.addEventListener("pointerdown", (e) => {
   if (e.altKey || e.button === 1) return; // leave to monitor pan
   const W = els.preview.width, H = els.preview.height, pt = canvasPt(e);
   const cur = getClip(state.selId);
+  const hit = pickClipAt(pt, W, H);
   canvasDrag = null;
   if (isVisualClip(cur) && activeAt(cur, state.time)) {
     const b = clipBounds(cur, evalProps(cur, state.time), W, H), lp = toLocal(pt, b);
@@ -4603,16 +4616,18 @@ els.preview.addEventListener("pointerdown", (e) => {
       } else {
         canvasDrag = { mode: "scale", id: cur.id, startScale: +cur.props.scale || 1, startDist: Math.hypot(lp.x, lp.y) || 1 };
       }
-    } else if (Math.abs(lp.x) <= b.hw && Math.abs(lp.y) <= b.hh) {
+    } else if (hit?.id === cur.id && Math.abs(lp.x) <= b.hw && Math.abs(lp.y) <= b.hh) {
       canvasDrag = { mode: "move", id: cur.id, startX: +cur.props.x || 0, startY: +cur.props.y || 0, startPt: pt };
     }
   }
   if (!canvasDrag) {
-    const hit = pickClipAt(pt, W, H);
     if (!hit) return;
     if (hit.id !== state.selId) { selectClip(hit.id); renderInspector(); }
     canvasDrag = { mode: "move", id: hit.id, startX: +hit.props.x || 0, startY: +hit.props.y || 0, startPt: pt };
   }
+  canvasDrag.clientX = e.clientX;
+  canvasDrag.clientY = e.clientY;
+  canvasDrag.editText = e.button === 0 && !state.playing && !state.exporting;
   canvasDidMove = false;
   if (canvasDrag.mode === "move") els.preview.style.cursor = "move";
   else if (canvasDrag.mode === "rotate") els.preview.style.cursor = ROTATE_CURSOR;
@@ -4653,6 +4668,7 @@ els.preview.addEventListener("pointermove", (e) => {
   if (!canvasDrag) { updateCanvasCursor(e); return; }
   const c = getClip(canvasDrag.id); if (!c) return;
   const W = els.preview.width, H = els.preview.height, pt = canvasPt(e);
+  if (!canvasDidMove && Math.hypot(e.clientX - canvasDrag.clientX, e.clientY - canvasDrag.clientY) < 3) return;
   if (!canvasDidMove) { pushUndo(); canvasDidMove = true; } // one undo per drag, only if it actually moves
   if (canvasDrag.mode === "move") {
     c.props.x = Math.round(canvasDrag.startX + (pt.x - canvasDrag.startPt.x));
@@ -4717,9 +4733,18 @@ els.preview.addEventListener("pointermove", (e) => {
 });
 function endCanvasDrag(e) {
   if (!canvasDrag) return;
+  const editText = !canvasDidMove && canvasDrag.mode === "move" && canvasDrag.editText
+    && e.type === "pointerup" && !state.playing && !state.exporting
+    && getClip(canvasDrag.id)?.kind === "text";
+  const id = canvasDrag.id;
   canvasDrag = null;
   try { els.preview.releasePointerCapture(e.pointerId); } catch { }
   if (canvasDidMove) { scheduleSave(); renderInspector(); } // no-op on a pure click
+  if (editText) {
+    selectClip(id);
+    renderInspector();
+    focusTextContent();
+  }
   updateCanvasCursor(e); // re-derive hover cursor at the release point
 }
 els.preview.addEventListener("pointerup", endCanvasDrag);

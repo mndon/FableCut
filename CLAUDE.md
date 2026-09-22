@@ -381,7 +381,7 @@ and expiry are controlled by the ASR service. Existing projects may omit it.
 **Text clips only:**
 | prop | default | notes |
 |---|---|---|
-| `text` | "Title" | `\n` for multi-line |
+| `text` | "Enter Text" | `\n` for multi-line |
 | `fontSize` | 72 | px |
 | `color` | "#ffffff" | fill |
 | `color2` | "" | if set: vertical gradient fill color→color2 |
@@ -404,11 +404,21 @@ and expiry are controlled by the ASR service. Existing projects may omit it.
 | `wordRate` | 0.15 | seconds per word (typewriter: /4, letter-pop: /3 per character); also staggers `clip-reveal`/`zoom-in`/`rise-mask` per line |
 | `fontCutSet` | (curated) | array of font family names cycled by `font-cut`, e.g. `["Anton","Bebas Neue","Archivo Black","Oswald"]`; each is auto-loaded |
 
-**Text styles (one-tap cohesive looks).** Use **+ Text / + 文本** to add a text
-clip at the playhead. Text clips created in the UI
+**Text styles (one-tap cohesive looks).** Use **+ Text / + 文字** to add a text
+clip at the playhead with `Enter Text` as its initial content. While paused,
+click text in the preview to open its inspector and focus/select the content
+field. Adding text manually also focuses/selects the content field. Clicking
+a timeline text clip selects the clip without focusing its content, so Delete
+and Backspace remain available for deleting the clip. Timeline dragging, trimming
+and modifier-key multi-selection retain their existing behavior. Dragging still moves the text. Text clips have no separate Name input;
+editing or resetting content also updates the clip name.
+Text clips created in the UI
 rotate through curated styles so titles vary instead of all looking basic (the
 old flat `Segoe UI` / no-animation default). Each style bundles a **different
-font**, placement and animation. Apply one in the inspector (Text style
+font**, placement and animation. Manual additions use the style's font, placement
+and decoration but start with `textAnim:"none"` so text is visible immediately,
+including at timeline zero. Choosing a style or animation in the inspector
+explicitly enables its animation; existing clips are unchanged. Apply one in the inspector (Text style
 dropdown + Shuffle), or reproduce it from an agent by writing the same props:
 
 | Style | Font | Look |

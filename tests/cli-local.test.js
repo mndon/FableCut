@@ -85,7 +85,7 @@ test("status starts one persistent server, verifies workspace, and refreshes bro
   assert.equal(results.filter(r => r.started).length, 1);
   assert.equal(status.dataDir, fs.realpathSync(dataDir));
   assert.equal(json(await run(args)).started, false);
-  const page = await fetch(status.projectUrl); assert.equal(page.status, 200); assert.match(await page.text(), /FableCut/);
+  const page = await fetch(status.projectUrl); assert.equal(page.status, 200); assert.match(await page.text(), /Tik — Video Editor/);
   const base = status.url;
   const old = await (await fetch(base + "api/project?project=preview")).json();
   // Opening SSE installs the project's file watcher, as a browser tab does.
