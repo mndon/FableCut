@@ -105,14 +105,11 @@ const FILTER_PRESETS = {
 };
 const SYSTEM_FONTS = ["Segoe UI", "Arial", "Georgia", "Impact", "Courier New",
   "Trebuchet MS", "Verdana", "Times New Roman", "Comic Sans MS", "Consolas"];
-const GOOGLE_FONTS = ["Anton", "Archivo Black", "Abril Fatface", "Barlow", "Bebas Neue",
-  "Caveat", "Inter", "Lobster", "Montserrat", "Oswald", "Pacifico", "Permanent Marker",
-  "Playfair Display", "Poppins", "Roboto", "Roboto Condensed", "Teko"];
 
 /* ── Title styles: cohesive one-tap looks. Each bundles a DIFFERENT font,
    placement and animation, so titles vary instead of all looking basic.
    Agents can reproduce a look by writing the same props directly. ── */
-const FONT_CUT_DEFAULT = ["Anton", "Bebas Neue", "Archivo Black", "Oswald", "Impact"];
+const FONT_CUT_DEFAULT = ["SourceHanSansSC-Bold", "Rubik-Black", "阿里巴巴普惠体-粗体", "阿里巴巴普惠体-中黑", "Impact"];
 const STYLE_RESET = {   // decorative props a style owns; reset before applying
   color2: "", glow: 0, glowColor: "", strokeWidth: 0, bgColor: "#000000", bgOpacity: 0,
   rotation: 0, letterSpacing: 0, uppercase: false, italic: false, textShadow: 12,
@@ -120,15 +117,15 @@ const STYLE_RESET = {   // decorative props a style owns; reset before applying
 };
 const TITLE_STYLES = {
   plain: { label: "Plain", place: "center", props: { font: "Segoe UI", fontSize: 72, bold: true, color: "#ffffff", textAnim: "none" } },
-  impact: { label: "Impact", place: "lower", props: { font: "Anton", fontSize: 96, bold: false, uppercase: true, color: "#ffffff", textShadow: 22, textAnim: "word-pop" } },
-  elegant: { label: "Elegant", place: "center", props: { font: "Playfair Display", fontSize: 88, bold: false, color: "#ffffff", color2: "#ffd166", letterSpacing: 2, textAnim: "clip-reveal" } },
-  kinetic: { label: "Kinetic cut", place: "center", props: { font: "Bebas Neue", fontSize: 120, bold: false, uppercase: true, color: "#ffd166", letterSpacing: 3, textAnim: "font-cut", fontCutSet: ["Anton", "Bebas Neue", "Archivo Black", "Oswald"] } },
-  neon: { label: "Neon", place: "center", props: { font: "Bebas Neue", fontSize: 104, bold: false, uppercase: true, color: "#ffffff", glow: 60, glowColor: "#22d3ee", textAnim: "wave" } },
-  handwritten: { label: "Handwritten", place: "lower-left", props: { font: "Caveat", fontSize: 92, bold: false, color: "#ffffff", rotation: -4, textAnim: "word-slide" } },
-  serifDrop: { label: "Serif drop", place: "center", props: { font: "Abril Fatface", fontSize: 96, bold: false, color: "#ffffff", textShadow: 18, textAnim: "zoom-in" } },
-  subtitle: { label: "Subtitle", place: "lower", props: { font: "Roboto", fontSize: 52, bold: false, color: "#ffffff", bgColor: "#000000", bgOpacity: 0.5, textAnim: "karaoke" } },
-  boldRise: { label: "Bold rise", place: "lower", props: { font: "Archivo Black", fontSize: 92, bold: false, uppercase: true, color: "#ffffff", textAnim: "rise-mask" } },
-  luxury: { label: "Luxury", place: "center", props: { font: "Cinzel", fontSize: 88, bold: false, uppercase: true, color: "#faf0dc", color2: "#c9a227", letterSpacing: 6, textAnim: "clip-reveal" } },
+  impact: { label: "Impact", place: "lower", props: { font: "SourceHanSansSC-Bold", fontSize: 96, bold: false, uppercase: true, color: "#ffffff", textShadow: 22, textAnim: "word-pop" } },
+  elegant: { label: "Elegant", place: "center", props: { font: "Georgia", fontSize: 88, bold: false, color: "#ffffff", color2: "#ffd166", letterSpacing: 2, textAnim: "clip-reveal" } },
+  kinetic: { label: "Kinetic cut", place: "center", props: { font: "Rubik-Black", fontSize: 120, bold: false, uppercase: true, color: "#ffd166", letterSpacing: 3, textAnim: "font-cut", fontCutSet: ["SourceHanSansSC-Bold", "Rubik-Black", "阿里巴巴普惠体-粗体", "阿里巴巴普惠体-中黑"] } },
+  neon: { label: "Neon", place: "center", props: { font: "阿里巴巴普惠体-中黑", fontSize: 104, bold: false, uppercase: true, color: "#ffffff", glow: 60, glowColor: "#22d3ee", textAnim: "wave" } },
+  handwritten: { label: "Handwritten", place: "lower-left", props: { font: "Comic Sans MS", fontSize: 92, bold: false, color: "#ffffff", rotation: -4, textAnim: "word-slide" } },
+  serifDrop: { label: "Serif drop", place: "center", props: { font: "Times New Roman", fontSize: 96, bold: false, color: "#ffffff", textShadow: 18, textAnim: "zoom-in" } },
+  subtitle: { label: "Subtitle", place: "lower", props: { font: "Roboto-Regular", fontSize: 52, bold: false, color: "#ffffff", bgColor: "#000000", bgOpacity: 0.5, textAnim: "karaoke" } },
+  boldRise: { label: "Bold rise", place: "lower", props: { font: "阿里巴巴普惠体-粗体", fontSize: 92, bold: false, uppercase: true, color: "#ffffff", textAnim: "rise-mask" } },
+  luxury: { label: "Luxury", place: "center", props: { font: "Chocolate Classical Sans", fontSize: 88, bold: false, uppercase: true, color: "#faf0dc", color2: "#c9a227", letterSpacing: 6, textAnim: "clip-reveal" } },
 };
 const STYLE_CYCLE = ["impact", "elegant", "kinetic", "neon", "handwritten", "serifDrop", "boldRise", "luxury"];
 const AUDIO_EXT = /\.(mp3|wav|ogg|m4a|aac|flac|mpeg)$/i;
@@ -313,7 +310,7 @@ const runtime = {
   wavePeaks: new Map(), // mediaId -> {channels: Float32Array[], max: Float32Array} | Float32Array (legacy) | null (pending)
   library: {},          // dir -> [{name, rel, src, size}] cached /api/library results
   customFonts: [],      // family names loaded from /library/fonts
-  googleLoaded: new Set(),
+  fontsLoading: null,   // coalesce startup and SSE font refreshes
   undo: [], redo: [],
   audio: null,          // {ctx, master, recDest, meter?, meterReady?}
   saveTimer: null, pendingSync: false,
@@ -665,7 +662,6 @@ function applyProject(data) {
     }
     if (c.keyframes) for (const arr of Object.values(c.keyframes))
       if (Array.isArray(arr)) arr.sort((a, b) => a.t - b.t);
-    if (c.kind === "text") ensureFont(c.props.font);
   }
   // TRACKS isn't persisted — any extra audio lanes (A5+, from a multi-channel
   // source) only exist as clip.track references on disk. Recreate them so
@@ -1475,8 +1471,6 @@ function applyTitleStyle(clip, name, { keepTransform = false } = {}) {
         : place === "lower-left" ? Math.round(H * 0.28) : 0;
     if (place === "lower-left") { P.x = -Math.round(W * 0.18); P.align = "left"; }
   }
-  ensureFont(P.font);
-  if (Array.isArray(P.fontCutSet)) P.fontCutSet.forEach(ensureFont);
   clip.styleName = name;
 }
 /* Custom title-style dropdown: every entry renders in its own font, hovering
@@ -1494,7 +1488,6 @@ function openStylePicker(anchor, c) {
   const menu = document.createElement("div");
   menu.className = "style-menu";
   for (const [k, v] of Object.entries(TITLE_STYLES)) {
-    ensureFont(v.props.font); // so the entry itself renders in the style's face
     const it = document.createElement("div");
     it.className = "style-opt" + (c.styleName === k ? " on" : "");
     it.textContent = uiText(v.label);
@@ -1540,12 +1533,6 @@ function openFontPicker(anchor, c) {
   menu.setAttribute("aria-label", uiText("Family"));
   const options = [];
   const seen = new Set();
-  const observer = new IntersectionObserver((entries) => {
-    for (const entry of entries) if (entry.isIntersecting) {
-      ensureFont(entry.target.dataset.font);
-      observer.unobserve(entry.target);
-    }
-  }, { root: menu, rootMargin: "60px" });
   const addGroup = (label, fonts) => {
     const unique = fonts.filter((font) => !seen.has(font) && seen.add(font));
     if (!unique.length) return;
@@ -1569,13 +1556,11 @@ function openFontPicker(anchor, c) {
       option.addEventListener("click", () => choose(font));
       options.push(option);
       group.appendChild(option);
-      observer.observe(option);
     }
     menu.appendChild(group);
   };
-  addGroup("System", SYSTEM_FONTS);
   addGroup("Library fonts", runtime.customFonts);
-  addGroup("Google fonts", [...GOOGLE_FONTS, ...runtime.googleLoaded]);
+  addGroup("System", SYSTEM_FONTS);
   addGroup("Family", [c.props.font]);
   let active = Math.max(0, options.findIndex((option) => option.dataset.font === c.props.font));
   function focusOption(index) {
@@ -1585,13 +1570,11 @@ function openFontPicker(anchor, c) {
     option.classList.add("active");
     menu.setAttribute("aria-activedescendant", option.id);
     option.scrollIntoView({ block: "nearest" });
-    ensureFont(option.dataset.font);
   }
   function choose(font) {
     if (font !== c.props.font) {
       pushUndo();
       c.props.font = font;
-      ensureFont(font);
       state.dirtyTimeline = true;
       scheduleSave();
     }
@@ -1600,7 +1583,6 @@ function openFontPicker(anchor, c) {
     els.inspector.querySelector("[data-font-open]")?.focus({ preventScroll: true });
   }
   function close() {
-    observer.disconnect();
     menu.remove();
     anchor.setAttribute("aria-expanded", "false");
     anchor.removeAttribute("aria-controls");
@@ -3204,10 +3186,6 @@ function renderInspector(lite) {
       <span class="insp-ctrls"><select data-k="${key}">${TRANSITIONS.map((x) => `<option value="${x}" ${x === (tr?.type || "none") ? "selected" : ""}>${uiText(x)}</option>`).join("")}</select>
        <input type="number" class="insp-dur" data-k="${key}Dur" step="0.1" min="0.1" value="${tr?.duration ?? 1}"></span></div>`;
   };
-  html += `<div class="insp-section"><h3>${uiText("Transition")}</h3>
-    ${tsel("In", "transIn", c.transitionIn)}
-    ${tsel("Out", "transOut", c.transitionOut)}
-  </div>`;
   if (c.kind === "text") {
     html += `<div class="insp-section"><h3>${uiText("Text")}</h3>
       ${row("Content", `<textarea data-k="text">${escapeHtml(p.text)}</textarea>`, "", "text")}
@@ -3228,8 +3206,6 @@ function renderInspector(lite) {
     </div>
     <div class="insp-section"><h3>${uiText("Font")}</h3>
       ${row("Family", `<button type="button" class="btn tiny style-picker-btn" data-font-open aria-haspopup="listbox" aria-expanded="false" aria-label="${uiAttr("Family")}">${escapeHtml(p.font)} ▾</button>`, "", "font")}
-      ${row("Google font", `<input type="text" data-gfont placeholder="${uiAttr("Type any Google Font name…")}">
-        <button class="btn tiny" data-action="gfont-load">${uiText("Load")}</button>`)}
       ${sel("Weight", "weight", [0, 300, 400, 500, 600, 700, 800, 900], p.weight)}
       ${check("Bold", "bold", p.bold)}
       ${check("Italic", "italic", p.italic)}
@@ -3254,6 +3230,10 @@ function renderInspector(lite) {
       ${slider("wordRate", 0.05, 0.6, 0.01, p.wordRate, "s")}
     </div>`;
   }
+  html += `<div class="insp-section"><h3>${uiText("Transition")}</h3>
+    ${tsel("In", "transIn", c.transitionIn)}
+    ${tsel("Out", "transOut", c.transitionOut)}
+  </div>`;
   els.inspector.innerHTML = html;
   els.inspector.querySelectorAll("label.insp-reset[data-reset]").forEach((lab) => {
     lab.addEventListener("click", (e) => {
@@ -3277,7 +3257,6 @@ function renderInspector(lite) {
         }
         if (k === "text" && c.kind === "text") c.name = c.props.text;
         if (k === "text" || k === "font") state.dirtyTimeline = true;
-        if (k === "font") ensureFont(String(DEFAULT_PROPS.font));
       }
       scheduleSave();
       renderInspector();
@@ -3290,7 +3269,6 @@ function renderInspector(lite) {
         : input.type === "range" || input.type === "number" ? parseFloat(input.value)
           : input.value;
       if (k === "weight") v = +v || 0;
-      if (k === "font") ensureFont(String(v));
       if (k === "name") { c.name = String(v); state.dirtyTimeline = true; }
       else if (k === "start") { c.start = Math.max(0, +v || 0); state.dirtyTimeline = true; }
       else if (k === "duration") { c.duration = Math.max(MIN_DUR, +v || MIN_DUR); state.dirtyTimeline = true; }
@@ -3325,13 +3303,6 @@ function renderInspector(lite) {
       if (a === "keyoff") c.props.chromaKey = "";
       else if (a === "grad-off") c.props.color2 = "";
       else if (a === "glow-auto") c.props.glowColor = "";
-      else if (a === "gfont-load") {
-        const name = els.inspector.querySelector("[data-gfont]")?.value.trim();
-        if (!name) return;
-        ensureFont(name);
-        c.props.font = name;
-        toast(uiText("Loading Google font \"{name}\"…", { name }));
-      }
       else if (a === "title-shuffle") {
         const keys = Object.keys(TITLE_STYLES).filter((k) => k !== "plain" && k !== c.styleName);
         applyTitleStyle(c, keys[Math.floor(Math.random() * keys.length)], { keepTransform: true });
@@ -5312,7 +5283,6 @@ function drawText(c, p, local) {
   // font-cut: rhythmically swap the typeface, then settle (speed cuts)
   if (anim === "font-cut") {
     const setF = (Array.isArray(p.fontCutSet) && p.fontCutSet.length) ? p.fontCutSet : FONT_CUT_DEFAULT;
-    setF.forEach(ensureFont);
     const cutDur = 0.6, interval = 0.06;
     let fam = p.font || "Segoe UI";
     if (local < cutDur) fam = setF[Math.floor(local / interval) % setF.length];
@@ -5421,35 +5391,28 @@ function drawText(c, p, local) {
 
 /* ═══════════════════════════ FONTS ═══════════════════════════ */
 /* Custom fonts: any .ttf/.otf/.woff/.woff2 in ./library/fonts is registered
-   under its file name (sans extension). Google fonts load on demand by name. */
+   under its file name (sans extension). Fonts are local only; no remote fetching. */
 async function loadLibraryFonts() {
-  try {
-    const files = await (await fetch("/api/library?dir=fonts")).json();
-    for (const f of files) {
-      if (!/\.(ttf|otf|woff2?)$/i.test(f.name)) continue;
-      const family = f.name.replace(/\.[^.]+$/, "");
-      if (runtime.customFonts.includes(family)) continue;
-      try {
-        const face = new FontFace(family, `url("${f.src}")`);
-        await face.load();
-        document.fonts.add(face);
-        runtime.customFonts.push(family);
-      } catch { }
-    }
-    runtime.customFonts.sort();
-  } catch { }
-}
-function ensureFont(name) {
-  if (!name || SYSTEM_FONTS.includes(name) || runtime.customFonts.includes(name)) return;
-  if (runtime.googleLoaded.has(name)) return;
-  // FontFaceSet.check also returns true for missing families that use fallback.
-  // Track requested Google families explicitly instead.
-  runtime.googleLoaded.add(name);
-  const link = document.createElement("link");
-  link.rel = "stylesheet";
-  link.href = "https://fonts.googleapis.com/css2?family=" +
-    encodeURIComponent(name).replace(/%20/g, "+") + ":ital,wght@0,300..900;1,300..900&display=swap";
-  document.head.appendChild(link);
+  if (runtime.fontsLoading) return runtime.fontsLoading;
+  runtime.fontsLoading = (async () => {
+    try {
+      const files = await (await fetch("/api/library?dir=fonts")).json();
+      for (const f of files) {
+        if (!/\.(ttf|otf|woff2?)$/i.test(f.name)) continue;
+        const family = f.name.replace(/\.[^.]+$/, "");
+        if (runtime.customFonts.includes(family)) continue;
+        try {
+          const face = new FontFace(family, `url("${f.src}")`);
+          await face.load();
+          document.fonts.add(face);
+          runtime.customFonts.push(family);
+        } catch { }
+      }
+      runtime.customFonts.sort();
+    } catch { }
+  })();
+  try { await runtime.fontsLoading; }
+  finally { runtime.fontsLoading = null; }
 }
 
 /* ── Main loop ── */

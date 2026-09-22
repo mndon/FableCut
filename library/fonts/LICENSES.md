@@ -1,31 +1,26 @@
 # Font licenses
 
-All fonts in this folder were downloaded from [Google Fonts](https://fonts.google.com)
-and are redistributed under the **SIL Open Font License 1.1** (OFL). Each family's
-license text and author information are available on its Google Fonts page.
+The editor ships only the ten WOFF2 faces listed below.
 
-| Family | Google Fonts page |
+The imported files and exact download URLs, SHA-256 hashes, character counts,
+and processing details are recorded in [IMPORTED-FONTS.json](IMPORTED-FONTS.json).
+Full copyright notices and open-source license texts are in `licenses/`.
+No imported font was subsetted. WOFF2 compression preserves the glyphs and cmap.
+
+| Font file / picker family | License |
 | --- | --- |
-| Abril Fatface | https://fonts.google.com/specimen/Abril+Fatface |
-| Anton | https://fonts.google.com/specimen/Anton |
-| Archivo Black | https://fonts.google.com/specimen/Archivo+Black |
-| Bangers | https://fonts.google.com/specimen/Bangers |
-| Barlow | https://fonts.google.com/specimen/Barlow |
-| Bebas Neue | https://fonts.google.com/specimen/Bebas+Neue |
-| Bungee | https://fonts.google.com/specimen/Bungee |
-| Caveat | https://fonts.google.com/specimen/Caveat |
-| DM Sans | https://fonts.google.com/specimen/DM+Sans |
-| Inter | https://fonts.google.com/specimen/Inter |
-| Lato | https://fonts.google.com/specimen/Lato |
-| Montserrat | https://fonts.google.com/specimen/Montserrat |
-| Oswald | https://fonts.google.com/specimen/Oswald |
-| Pacifico | https://fonts.google.com/specimen/Pacifico |
-| Playfair Display | https://fonts.google.com/specimen/Playfair+Display |
-| Poppins | https://fonts.google.com/specimen/Poppins |
-| Righteous | https://fonts.google.com/specimen/Righteous |
-| Roboto | https://fonts.google.com/specimen/Roboto |
-| Rubik | https://fonts.google.com/specimen/Rubik |
-| Teko | https://fonts.google.com/specimen/Teko |
+| Chocolate Classical Sans | SIL OFL 1.1 |
+| SourceHanSansSC-Bold | SIL OFL 1.1 |
+| SourceHanSansSC-Light | SIL OFL 1.1 |
+| Roboto-Regular | Apache 2.0 (this specific older font version) |
+| Rubik-Black | SIL OFL 1.1 |
+| 寒蝉活黑体 | SIL OFL 1.1 |
+| Corporate-Logo-Rounded | SIL OFL 1.1 |
+| 阿里巴巴普惠体-常规 | Alibaba proprietary free-use terms |
+| 阿里巴巴普惠体-中黑 | Alibaba proprietary free-use terms |
+| 阿里巴巴普惠体-粗体 | Alibaba proprietary free-use terms |
 
-The OFL permits free use, modification, and redistribution of the fonts, provided
-they are not sold on their own. Full license: https://openfontlicense.org
+Alibaba fonts were obtained in native WOFF2 format from the official CDN and
+are not open source. See [Alibaba notice](licenses/AlibabaPuHuiTi-NOTICE.md)
+before redistributing a software package containing them. Other commercial or
+unverified fonts in the supplied catalog have not been imported.

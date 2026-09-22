@@ -27,7 +27,21 @@
       check($('inspector').textContent.includes('变换'), 'dynamic inspector is Chinese');
       check($('inspector').querySelector('[data-k=transIn]').value === 'fade', 'transition values stay canonical');
       check($('inspector').querySelector('[data-k=textAnim]').value === 'word-pop', 'animation values stay canonical');
-      check($('inspector').querySelector('[data-k=font]').value === 'Arial', 'font family stays canonical');
+      const fontButton = $('inspector').querySelector('[data-font-open]');
+      check(fontButton.textContent.trim() === 'Arial ▾', 'font family stays canonical');
+      await waitFor(() => runtime.customFonts.length === 10);
+      check(!$('inspector').querySelector('[data-gfont]'), 'Google font input is absent');
+      fontButton.click();
+      const fontMenu = document.getElementById('font-picker-menu');
+      const fontGroups = [...fontMenu.querySelectorAll('[role=group]')];
+      check(fontGroups.length === 2, 'only library and system font groups remain');
+      check(fontGroups[0].getAttribute('aria-label') === uiText('Library fonts'), 'library fonts precede system fonts');
+      check(fontGroups[0].querySelectorAll('[role=option]').length === 10, 'all ten retained fonts appear');
+      check(fontGroups[1].getAttribute('aria-label') === uiText('System'), 'system fonts appear second');
+      check([...fontMenu.querySelectorAll('[role=option]')].every(option => option.style.fontFamily.includes(option.dataset.font)), 'each font option previews its own family');
+      fontMenu.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+      check(!document.getElementById('font-picker-menu') && getClip('title').props.font === 'Arial', 'cancel preserves the selected font');
+      check(!document.querySelector('link[href*="fonts.googleapis.com"]'), 'no remote Google font stylesheet is loaded');
       check($('inspector').querySelector('[data-k=text]').value === 'Settings <b>Export</b> {count}', 'caption content is untouched');
       const snapshot = JSON.stringify(project);
       drawFrame(0.5);
@@ -74,7 +88,11 @@
       closeSettings();
       $('btnLayoutReset').click();
       check(state.trackSize === 's' && localStorage.getItem('fablecut-track-size') === 's', 'Layout reset restores S');
-      check(JSON.stringify(project) === sessionStorage.getItem('ui-test-project'), 'project remains unchanged after reload');
+      // Server normalization can reorder JSON keys without changing the project.
+      const canonical = value => JSON.stringify(value, (_, item) =>
+        item && typeof item === 'object' && !Array.isArray(item)
+          ? Object.fromEntries(Object.keys(item).sort().map(key => [key, item[key]])) : item);
+      check(canonical(project) === canonical(JSON.parse(sessionStorage.getItem('ui-test-project'))), 'project remains unchanged after reload');
       localStorage.setItem('fablecut-settings', '{broken');
       sessionStorage.setItem('ui-test-checks', JSON.stringify(checks));
       sessionStorage.setItem('ui-test-phase', 'invalid');

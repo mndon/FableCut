@@ -228,9 +228,17 @@ Reusable assets, visible in the editor's left-panel tabs and never copied:
   e.g. `{ "id":"m_x", "name":"whoosh.mp3", "kind":"audio", "src":"/library/sfx/whoosh.mp3" }`
   — then reference it from clips like any other media.
 - Dropping files into these folders live-refreshes the open UI.
+- The ten bundled full-character-set WOFF2 faces are Chocolate Classical Sans,
+  SourceHanSansSC-Bold/Light, Roboto-Regular, Rubik-Black, 寒蝉活黑体,
+  Corporate-Logo-Rounded, and 阿里巴巴普惠体-常规/中黑/粗体. Use the exact
+  filename without `.woff2` as `props.font` (each weight is a separate family).
+  `library/fonts/IMPORTED-FONTS.json` records sources and checksums; see
+  `LICENSES.md` and `licenses/` for terms, including the separate Alibaba notice.
 - The inspector font-family picker renders each name in its own typeface, grouped
-  by system, library and Google fonts. Google previews load as options become
-  visible. Arrow keys/Home/End navigate; Enter selects and Escape cancels.
+  with library fonts first and system fonts second. Google font selection and
+  automatic remote downloading are disabled. Unknown saved font names are kept
+  unchanged and use browser fallback unless installed locally.
+  Arrow keys/Home/End navigate; Enter selects and Escape cancels.
 
 ## Authoring animated SVGs (the `svg` clip kind)
 
@@ -388,7 +396,7 @@ and expiry are controlled by the ASR service. Existing projects may omit it.
 | `fontSize` | 72 | px |
 | `color` | "#ffffff" | fill |
 | `color2` | "" | if set: vertical gradient fill color→color2 |
-| `font` | "Segoe UI" | system font, a `library/fonts` family, or ANY Google Font name — unknown names are fetched from Google Fonts automatically |
+| `font` | "Segoe UI" | system font or a `library/fonts` family; no remote font downloading |
 | `bold` / `weight` | true / 0 | `weight` (300–900) overrides `bold` when non-zero |
 | `italic` `uppercase` | false | |
 | `align` | "center" | left · center · right · **justify** (inserts spaces between words to fill the text box width, or ~85% of the canvas when no box) |
@@ -405,7 +413,7 @@ and expiry are controlled by the ASR service. Existing projects may omit it.
 | `bgColor` `bgOpacity` | "#000", 0 | rounded pill behind each line |
 | `textAnim` | "none" | typewriter · word-pop · word-slide · karaoke · **letter-pop** (per-character entrance; Arabic/Indic auto-fallback to per-word clusters so joined letters shape correctly) · **wave** (looping per-character ride; same shaping fallback) · **bounce** (looping per-word hop) · **shake** (looping jitter) · **clip-reveal** (wipe-mask sweep, per line) · **zoom-in** (scale + opacity settle) · **font-cut** (rhythmically swaps typeface, then settles — see `fontCutSet`) · **rise-mask** (line rises from behind its baseline, lower-third reveal) |
 | `wordRate` | 0.15 | seconds per word (typewriter: /4, letter-pop: /3 per character); also staggers `clip-reveal`/`zoom-in`/`rise-mask` per line |
-| `fontCutSet` | (curated) | array of font family names cycled by `font-cut`, e.g. `["Anton","Bebas Neue","Archivo Black","Oswald"]`; each is auto-loaded |
+| `fontCutSet` | (curated) | array of font family names cycled by `font-cut`, e.g. `["SourceHanSansSC-Bold","Rubik-Black","阿里巴巴普惠体-粗体","阿里巴巴普惠体-中黑"]`; use bundled or installed fonts |
 
 **Text styles (one-tap cohesive looks).** Use **+ Text / + 文字** to add a text
 clip at the playhead with `Enter Text` as its initial content. While paused,
@@ -426,19 +434,19 @@ dropdown + Shuffle), or reproduce it from an agent by writing the same props:
 
 | Style | Font | Look |
 | --- | --- | --- |
-| `impact` | Anton | uppercase, lower third, `word-pop`, big shadow |
-| `elegant` | Playfair Display | white→gold gradient, centered, `clip-reveal` |
-| `kinetic` | Bebas Neue | gold, `font-cut` cycling Anton/Bebas/Archivo/Oswald |
-| `neon` | Bebas Neue | cyan `glow`, `wave` |
-| `handwritten` | Caveat | rotated −4°, lower-left, `word-slide` |
-| `serifDrop` | Abril Fatface | centered, `zoom-in` |
-| `subtitle` | Roboto | small, bottom, bg pill, `karaoke` |
-| `boldRise` | Archivo Black | uppercase, lower third, `rise-mask` |
-| `luxury` | Cinzel | uppercase, cream→gold gradient, wide `letterSpacing`, `clip-reveal` |
+| `impact` | SourceHanSansSC-Bold | uppercase, lower third, `word-pop`, big shadow |
+| `elegant` | Georgia | white→gold gradient, centered, `clip-reveal` |
+| `kinetic` | Rubik-Black | gold, `font-cut` cycling bundled bold faces |
+| `neon` | 阿里巴巴普惠体-中黑 | cyan `glow`, `wave` |
+| `handwritten` | Comic Sans MS | rotated −4°, lower-left, `word-slide` |
+| `serifDrop` | Times New Roman | centered, `zoom-in` |
+| `subtitle` | Roboto-Regular | small, bottom, bg pill, `karaoke` |
+| `boldRise` | 阿里巴巴普惠体-粗体 | uppercase, lower third, `rise-mask` |
+| `luxury` | Chocolate Classical Sans | uppercase, cream→gold gradient, wide `letterSpacing`, `clip-reveal` |
 
 **Rule for agents: vary the font per title — never reuse one font across a whole
-edit.** Any Google Font name auto-loads; the display faces above ship in
-`library/fonts/`. Placement props (`x`/`y`) are canvas-aware in the styles
+edit.** The styles above use bundled local faces or system fonts. No remote
+fonts are downloaded. Placement props (`x`/`y`) are canvas-aware in the styles
 (lower third ≈ `y: height*0.30`).
 
 Switching the style on an **existing** title (inspector dropdown/Shuffle) only
@@ -607,7 +615,7 @@ Cut between shots with `transitionIn:{type:"glitch",duration:0.3}`.
 `props: {filterPreset:"cinematic", grain:18}` — one clip grades every shot.
 
 **Neon caption**: `props: {glow:60, glowColor:"#22d3ee", color:"#ffffff",
-font:"Bebas Neue", textAnim:"wave"}` on a dark shot.
+font:"Rubik-Black", textAnim:"wave"}` on a dark shot.
 
 **Light leak accent**: `library/elements/light-leak-warm.svg` on V3,
 `props:{blend:"screen", fit:"cover", opacity:0.7}`, 1–2 s at scene changes,
@@ -621,24 +629,22 @@ strokeWidth:6, bgColor:"#000000", bgOpacity:0.45, fontSize:88}`. `karaoke`
 dims words until "spoken"; `typewriter` for terminal vibes.
 
 **RTL / Hebrew / Arabic caption**: omit `direction` (defaults to `"auto"`) or set
-`direction:"rtl"` explicitly; pick a font with the script's glyphs (Google Fonts
-work). Animations wipe and stagger in reading order automatically. `letter-pop` /
+`direction:"rtl"` explicitly; pick an installed system or local library font with the script's glyphs. Animations wipe and stagger in reading order automatically. `letter-pop` /
 `wave` animate whole words on Arabic/Indic lines (not isolated letters) so
 cursive joining stays correct.
 
-**Branded title**: `props: {font:"Bebas Neue", weight:700, letterSpacing:6,
-uppercase:true, color:"#ffffff", color2:"#7b6cff", textShadow:20}` — any Google
-Font name just works.
+**Branded title**: `props: {font:"Rubik-Black", weight:700, letterSpacing:6,
+uppercase:true, color:"#ffffff", color2:"#7b6cff", textShadow:20}` — choose a bundled or installed font.
 
 **Kinetic font-cut title** (rhythmic typeface cuts on the beat, then settle):
-`props: {font:"Bebas Neue", fontSize:120, uppercase:true, color:"#ffd166",
-textAnim:"font-cut", fontCutSet:["Anton","Bebas Neue","Archivo Black","Oswald"]}`.
+`props: {font:"Rubik-Black", fontSize:120, uppercase:true, color:"#ffd166",
+textAnim:"font-cut", fontCutSet:["SourceHanSansSC-Bold","Rubik-Black","阿里巴巴普惠体-粗体","阿里巴巴普惠体-中黑"]}`.
 
-**Elegant clip-on title** (letters wipe in): `props: {font:"Playfair Display",
+**Elegant clip-on title** (letters wipe in): `props: {font:"Georgia",
 fontSize:88, color:"#ffffff", color2:"#ffd166", letterSpacing:2,
 textAnim:"clip-reveal"}` — centered, one clean sweep.
 
-**Lower-third reveal**: `props: {font:"Archivo Black", fontSize:92,
+**Lower-third reveal**: `props: {font:"阿里巴巴普惠体-粗体", fontSize:92,
 uppercase:true, textAnim:"rise-mask", y:<height*0.30>}` — the line rises from
 behind its baseline. Pair with a `serifDrop`/`zoom-in` kicker above it.
 

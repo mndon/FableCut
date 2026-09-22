@@ -153,9 +153,9 @@ same time.
   **wave**, **bounce**, **shake**, **clip-reveal**, **zoom-in**, **font-cut**
   (rhythmic typeface cuts), **rise-mask**
 - **Neon glow** for that TikTok caption look
-- Font editor: system fonts, drop-in custom fonts (`library/fonts/`), and **any
-  Google Font by name** — loaded automatically. The family picker previews each
-  option in its own typeface, with grouped choices and keyboard navigation.
+- Font editor: the ten bundled WOFF2 faces and drop-in custom fonts
+  (`library/fonts/`) appear before system fonts. Each option previews its own
+  typeface, with keyboard navigation. No Google Fonts picker or remote loading.
 - Gradient fills, outline, background pills, letter-spacing, line-height,
   weights, italic, uppercase, soft shadows
 - **Text layout** — horizontal Align: left / center / right / **justify**
@@ -453,9 +453,13 @@ examples in [`library/svg/`](library/svg/).
 
 ## Notes
 
-- The repo ships with **20 Google Fonts** (`library/fonts/`, OFL — see
-  `LICENSES.md` there) and a set of self-authored SVG overlays and animated
-  elements (`library/elements/`, `library/svg/`, MIT like the rest of the repo).
+- The editor font library contains **10 WOFF2 faces**, including Chinese fonts
+  and explicit weight variants. The original 20 bundled faces were removed. See
+  `library/fonts/LICENSES.md` for per-font terms and `IMPORTED-FONTS.json` for
+  sources and checksums. Alibaba PuHuiTi uses proprietary free-use terms, not
+  OFL; check its notice before redistributing it in a software bundle.
+  Self-authored SVG overlays and animated elements (`library/elements/`,
+  `library/svg/`) remain MIT like the rest of the repo.
 - `library/sfx/` is yours to fill (gitignored): sound-effect sites typically
   don't allow redistributing their files in a public repo, so FableCut doesn't —
   `library/sfx/README.md` lists good free sources.

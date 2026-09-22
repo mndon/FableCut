@@ -1,0 +1,174 @@
+{
+  "description": "2026-09-22 import: full character sets; original copyright and license metadata retained. Source CDN files are from the user-provided response, except Alibaba official WOFF2.",
+  "fonts": [
+    {
+      "file": "寒蝉活黑体.woff2",
+      "source": "https://material-center.meitudata.com/material/font/66f929f0591101168.ttf",
+      "sourceSHA256": "89ce807c9ab9ecf459a5244bed8c82a9a52e5c0e04678d0803ad81d5f53d5f69",
+      "sha256": "8f20f0632c293ca0c7026487eeb58f16e5dda0984a39c8f117511d58a6cab5b9",
+      "characters": 19045,
+      "bytes": 21753364,
+      "copyright": [
+        "© 2014-2021 Adobe, with Reserved Font Name 'Source'.© 2024 ChillType, with Reserved Font Name 'ChillHuoGothic'."
+      ],
+      "license": [
+        "This Font Software is licensed under the SIL Open Font License, Version 1.1. This license is available with a FAQ at: https://scripts.sil.org/OFL",
+        "https://scripts.sil.org/OFL"
+      ],
+      "processing": "Lossless WOFF2 compression; no subsetting, glyph edits, or renaming.",
+      "licenseFile": "licenses/寒蝉活黑体.txt"
+    },
+    {
+      "file": "Roboto-Regular.woff2",
+      "source": "https://material-center.meitudata.com/material/font/607ec7d3f1bf49837.ttf",
+      "sourceSHA256": "017c0be9aaa6d0359737e1fa762ad304c0e0107927faff5a6c1f415c7f5244ed",
+      "sha256": "5566e2c110604dfe6511079ba98134a74757dccee85a209f42b3553850d01a69",
+      "characters": 896,
+      "bytes": 64408,
+      "copyright": [
+        "Copyright 2011 Google Inc. All Rights Reserved."
+      ],
+      "license": [
+        "Licensed under the Apache License, Version 2.0",
+        "http://www.apache.org/licenses/LICENSE-2.0"
+      ],
+      "processing": "Lossless WOFF2 compression; no subsetting, glyph edits, or renaming.",
+      "licenseFile": "licenses/Roboto-Regular.txt"
+    },
+    {
+      "file": "Rubik-Black.woff2",
+      "source": "https://material-center.meitudata.com/material/font/607ec6e5d580344.ttf",
+      "sourceSHA256": "235e565f0a1202f5d372d123f8dbac61585a9d3baa30e88bd3d52498ef0af36c",
+      "sha256": "c73fb5b040fdf8194a80c462583125cfdcb78583255cf61dbf8ecae924fbe4fe",
+      "characters": 690,
+      "bytes": 41028,
+      "copyright": [
+        "Copyright 2015 The Rubik Project Authors (https://github.com/googlefonts/rubik)"
+      ],
+      "license": [
+        "This Font Software is licensed under the SIL Open Font License, Version 1.1. This license is available with a FAQ at: http://scripts.sil.org/OFL",
+        "http://scripts.sil.org/OFL"
+      ],
+      "processing": "Lossless WOFF2 compression; no subsetting, glyph edits, or renaming.",
+      "licenseFile": "licenses/Rubik-Black.txt"
+    },
+    {
+      "file": "Corporate-Logo-Rounded.woff2",
+      "source": "https://material-center.meitudata.com/material/font/Corporate-Logo-Rounded.ttf",
+      "sourceSHA256": "ebff4d3653af3f313676b0c55a40940e51b4341a529f3f3660f6d5decbd33aea",
+      "sha256": "8e8a3fa04a243eace4cd64e4bfa5294f50f765e4f3092a8cf941804be640fda5",
+      "characters": 10060,
+      "bytes": 3629180,
+      "copyright": [
+        "[KANA_main] LOGOTYPE.JP [Genshin] Copyright 2014 Jikasei Font Kobo by MM. [Source Han Sans] © 2014-2020 Adobe (http://www.adobe.com/), with Reserved Font Name 'Source'. [M+] Copyright 2015 M+ FONTS PROJECT "
+      ],
+      "license": [
+        "SIL Open Font License 1.1"
+      ],
+      "processing": "Lossless WOFF2 compression; no subsetting, glyph edits, or renaming.",
+      "licenseFile": "licenses/Corporate-Logo-Rounded.txt"
+    },
+    {
+      "file": "SourceHanSansSC-Light.woff2",
+      "source": "https://material-center.meitudata.com/material/font/60acc76f6ade87322.otf",
+      "sourceSHA256": "8e06e7642097aff11a5487f74f80efd5caaa1b4730cd08ef53a4efe1cdd20a7c",
+      "sha256": "cb6220ec0afa5718c5ee977a45231d55a625bcc2d344e1fd1eb1e6c5e0dc48d5",
+      "characters": 44808,
+      "bytes": 11643148,
+      "copyright": [
+        "© 2014-2019 Adobe (http://www.adobe.com/), with Reserved Font Name 'Source'."
+      ],
+      "license": [
+        "This Font Software is licensed under the SIL Open Font License, Version 1.1. This Font Software is distributed on an \"AS IS\" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the SIL Open Font License for the specific language, permissions and limitations governing your use of this Font Software.",
+        "http://scripts.sil.org/OFL"
+      ],
+      "processing": "Lossless WOFF2 compression; no subsetting, glyph edits, or renaming.",
+      "licenseFile": "licenses/SourceHanSansSC-Light.txt"
+    },
+    {
+      "file": "Chocolate Classical Sans.woff2",
+      "source": "https://material-center.meitudata.com/material/font/68020bf108d184231.ttf",
+      "sourceSHA256": "5de4035931ff265327387ffb665be9d93f394c480aa894519ac48c57cc9ffc9f",
+      "sha256": "fcabdb776ec500cb36028cd32afb90b733286a1a8e646d0f8cead5a2d52477b7",
+      "characters": 32699,
+      "bytes": 4521852,
+      "copyright": [
+        "Copyright 2024 The Chocolate Classical Sans Project Authors (https://github.com/MoonlitOwen/ChocolateSans)"
+      ],
+      "license": [
+        "This Font Software is licensed under the SIL Open Font License, Version 1.1. This license is available with a FAQ at: https://openfontlicense.org",
+        "https://openfontlicense.org"
+      ],
+      "processing": "Lossless WOFF2 compression; no subsetting, glyph edits, or renaming.",
+      "licenseFile": "licenses/Chocolate Classical Sans.txt"
+    },
+    {
+      "file": "SourceHanSansSC-Bold.woff2",
+      "source": "https://material-center.meitudata.com/material/font/60acc80c93f7e8097.otf",
+      "sourceSHA256": "df560f379d55a0c9859add605dd67e0721955fde3cd76c41c5f8d6cba7823d41",
+      "sha256": "7924b4880fbd7f7a1a92a03cdbd84cea77db3b6f6e411f07df7bb9526a5ce4be",
+      "characters": 44808,
+      "bytes": 12837148,
+      "copyright": [
+        "© 2014-2019 Adobe (http://www.adobe.com/), with Reserved Font Name 'Source'."
+      ],
+      "license": [
+        "This Font Software is licensed under the SIL Open Font License, Version 1.1. This Font Software is distributed on an \"AS IS\" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the SIL Open Font License for the specific language, permissions and limitations governing your use of this Font Software.",
+        "http://scripts.sil.org/OFL"
+      ],
+      "processing": "Lossless WOFF2 compression; no subsetting, glyph edits, or renaming.",
+      "licenseFile": "licenses/SourceHanSansSC-Bold.txt"
+    },
+    {
+      "file": "阿里巴巴普惠体-常规.woff2",
+      "source": "https://fonts.alibabadesign.com/AlibabaPuHuiTi/Alibaba-PuHuiTi-Regular/Alibaba-PuHuiTi-Regular.woff2",
+      "sha256": "1148febdad2493886643a3b7c78be9cc198d893ed1df7063121d7808d873cc82",
+      "characters": 29628,
+      "bytes": 4849256,
+      "copyright": [
+        "(c) 2020 阿里巴巴（中国）有限公司，版权所有",
+        "Copyright ?2020 Alibaba (China) Co., Ltd. All rights reserved.",
+        "Copyright © 2020 Alibaba (China) Co., Ltd. All rights reserved."
+      ],
+      "license": [
+        "Alibaba proprietary free-commercial-use terms; not OFL or Apache."
+      ],
+      "licenseFile": "licenses/AlibabaPuHuiTi-NOTICE.md",
+      "processing": "Official WOFF2 bytes copied unchanged; only local filename differs."
+    },
+    {
+      "file": "阿里巴巴普惠体-中黑.woff2",
+      "source": "https://fonts.alibabadesign.com/AlibabaPuHuiTi/Alibaba-PuHuiTi-Medium/Alibaba-PuHuiTi-Medium.woff2",
+      "sha256": "e790cdb90d7630951b0972c3c418895ffa2527685bf7f390d270da6cec62e3fa",
+      "characters": 29628,
+      "bytes": 5123460,
+      "copyright": [
+        "(c) 2020 阿里巴巴（中国）有限公司，版权所有",
+        "Copyright ?2020 Alibaba (China) Co., Ltd. All rights reserved.",
+        "Copyright © 2020 Alibaba (China) Co., Ltd. All rights reserved."
+      ],
+      "license": [
+        "Alibaba proprietary free-commercial-use terms; not OFL or Apache."
+      ],
+      "licenseFile": "licenses/AlibabaPuHuiTi-NOTICE.md",
+      "processing": "Official WOFF2 bytes copied unchanged; only local filename differs."
+    },
+    {
+      "file": "阿里巴巴普惠体-粗体.woff2",
+      "source": "https://fonts.alibabadesign.com/AlibabaPuHuiTi/Alibaba-PuHuiTi-Bold/Alibaba-PuHuiTi-Bold.woff2",
+      "sha256": "81e7c8906ea37cf00daa4b184977539de80ab3d1583d388efc49b046d8372285",
+      "characters": 29628,
+      "bytes": 5088776,
+      "copyright": [
+        "(c) 2020 阿里巴巴（中国）有限公司，版权所有",
+        "Copyright ?2020 Alibaba (China) Co., Ltd. All rights reserved.",
+        "Copyright © 2020 Alibaba (China) Co., Ltd. All rights reserved."
+      ],
+      "license": [
+        "Alibaba proprietary free-commercial-use terms; not OFL or Apache."
+      ],
+      "licenseFile": "licenses/AlibabaPuHuiTi-NOTICE.md",
+      "processing": "Official WOFF2 bytes copied unchanged; only local filename differs."
+    }
+  ]
+}
