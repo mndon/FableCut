@@ -814,3 +814,23 @@ speed comparison. Artifacts and metrics are written to an isolated temporary
 directory printed by the test. These tests need ffmpeg, ffprobe and Chrome
 (`CHROME_PATH` can override the test browser). Speed depends on source codec,
 effects and cache state; the name does not guarantee faster exports.
+
+## CLI OpenAPI authentication
+
+Run `tik-editvideo-cli auth status` to validate the saved API Key and return
+`logged_in` plus `user_info`. A missing or rejected key returns
+`{"logged_in": false}` with exit code 0. Network and service failures are errors.
+Use `tik-editvideo-cli auth login` when signed out: it prints and opens a browser
+login URL, polls until authorization or expiry, validates the returned key, and
+saves it to `~/.tik-editvideo-cli/auth.json` with mode `0600`. Add `--no-browser`
+on headless systems. Credentials are never printed. The default OpenAPI origin
+is `https://app.tttci.com`; `--api-url <origin>` selects another environment and
+credentials are bound to that origin. The selected origin is saved on login.
+`auth logout` deletes local credentials only; revoke the key in API Key management
+to invalidate it on every device. Repeated logins reuse the dedicated CLI key;
+there is no per-user API Key count limit. New keys use `sk-<UUID v4><yyMMddHHmmss>`
+with a Beijing-time suffix (51 characters total). Existing 64-character hex keys
+remain valid and are not automatically rotated.
+
+These commands do not start the local editor server. The existing `status`
+command still controls local preview. Local editing remains available offline.

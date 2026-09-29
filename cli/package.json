@@ -1,7 +1,7 @@
 {
   "name": "tik-editvideo-cli",
   "version": "1.7.0",
-  "description": "Local video editing, on-demand preview, and headless export for FableCut",
+  "description": "Local video editing, on-demand preview, and headless",
   "license": "MIT",
   "type": "commonjs",
   "bin": {

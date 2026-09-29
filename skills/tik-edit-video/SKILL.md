@@ -21,6 +21,20 @@ fi
 
 若 `npm` 不存在，停止并报告；命令执行失败按下述约束处理。
 
+## 登录鉴权
+
+初始化 CLI 后先运行 `tik-editvideo-cli auth status`，以返回的 `logged_in` 判断 OpenAPI 登录状态。未登录是正常状态（退出码为 0）；此时运行：
+
+```bash
+tik-editvideo-cli auth login
+```
+
+CLI 会输出网页登录地址并尝试打开浏览器，随后自动轮询。把链接提供给用户，让用户在网页输入手机号和验证码、确认授权；保持登录命令运行直至成功或超时。不要代填验证码、读取或展示本地 API Key。无浏览器环境可加 `--no-browser`，让用户手动打开链接。
+
+成功后 CLI 自动保存 API Key，并返回 `logged_in: true` 和用户信息，再继续剪辑。密钥失效时 `auth status` 返回 `logged_in: false`，重新运行 `auth login`。网络错误或登录超时会返回非零退出码，按下述失败约束报告，不自动重试。
+
+仅在用户要求退出时运行 `tik-editvideo-cli auth logout`，它清除本地登录凭证。`auth status` 是远程登录检查，`status` 是本地预览服务检查，两者用途不同。
+
 ## 执行约束
 
 - 剪辑和导出仅通过 `tik-editvideo-cli` 执行，不检查或修改其实现。
@@ -36,6 +50,9 @@ fi
 tik-editvideo-cli <命令> <参数>
 ```
 
+- `auth status`：校验已保存的 API Key，返回登录状态和用户信息。
+- `auth login`：发起网页登录授权并轮询，成功后自动保存 API Key。
+- `auth logout`：清除本地 API Key；不会撤销服务端密钥。
 - `create-project`：创建项目。
   - `--name <名称>`：必填，项目显示名称。
   - `--id <ID>`：可选，稳定的小写项目 ID。

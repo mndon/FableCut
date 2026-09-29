@@ -320,6 +320,7 @@ function printHelp() {
   console.log(`tik-editvideo-cli - local editing, preview, and export
 
 Usage:
+  tik-editvideo-cli auth status|login|logout [--api-url <origin>] [--no-browser]
   tik-editvideo-cli list-projects
   tik-editvideo-cli create-project --name <name> [--id <id>]
   tik-editvideo-cli get-project --project <id> [--compact]
@@ -346,6 +347,10 @@ async function main(argv = process.argv.slice(2)) {
   const { positionals, options } = parseArgs(argv);
   const command = positionals[0];
   if (!command || command === "help" || options.help) { printHelp(); return; }
+  if (command === "auth") {
+    console.log(JSON.stringify(await require("./auth").runAuth(positionals[1], options), null, 2));
+    return;
+  }
   if (options["data-dir"] !== undefined) throw new CliError("--data-dir is no longer supported; storage is fixed at ~/.tik-editvideo-cli");
   const commands = ["server", "status", "list-projects", "create-project", "get-project", "patch-project", "set-project", "import-media", "export"];
   if (!commands.includes(command)) throw new CliError("Unknown command: " + command + " (run tik-editvideo-cli --help)");
