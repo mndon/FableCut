@@ -1,11 +1,11 @@
 # 切片执行流程
 
-本页供执行时读取，不向用户照搬内部步骤。CONNECTOR_DIR 为本 skill 的绝对目录。客户端配合 [tik-audio-asr](../../tik-audio-asr/SKILL.md) 与 [tik-edit-video](../../tik-edit-video/SKILL.md)；语义分析和工程生成交给云端切片师。发任务时明确素材、转写已准备以及需回传的文件，不要求对方识别客户端技能名称。
+本页供执行时读取，不向用户照搬内部步骤。CONNECTOR_DIR 为本 skill 的绝对目录。客户端配合 [tik-edit-video](../../tik-edit-video/SKILL.md)；语义分析和工程生成交给云端切片师。发任务时明确素材、转写已准备以及需回传的文件，不要求对方识别客户端技能名称。
 
 ## 1. 客户端准备
 
 1. 建立独立 run 目录，记录用户原始要求。按 [素材准备](preparation.md) 执行 `prepare_video.py`，以 preparation.json 的 `path` 为后续唯一素材。已有 ASR/工程保持原绑定，需要归一化时停止并说明，不能给旧 ASR 换素材。
-2. 按 [素材准备](preparation.md) 复核完整音频，交给 tik-audio-asr 转写或复用原 ASR URL/JSON。下载失败不重转，空 ASR 不发起选句。客户端不重建语义索引；首次全量索引由服务端创建并持久保留。
+2. 按 [素材准备](preparation.md) 提取并复核完整音频，运行 `tik-editvideo-cli asr --path <音频绝对路径> --output <本地JSON路径>`，记录返回的 `json_url` 与 `path`；已有 ASR URL 用 `tik-editvideo-cli download --url <ASR_URL> --output <本地JSON路径>` 下载，已有本地 JSON 直接复用。下载失败不重转，空 ASR 不发起选句。客户端不重建语义索引；首次全量索引由服务端创建并持久保留。
 3. 将已知商品、声音范围、内容方向、时长、倍速、字幕和原视频时间范围写入 requirements.json。未知项保留未知；需要结合 ASR 才能提出的商品/钩子问题由服务端返回，客户端原样展示并收集回答，不替用户选择。
 4. 用 `tik-editvideo-cli` 新建本轮专用准备工程，设置实际画幅/FPS，导入准备后的素材及其 `--asr-url`。已有工程可复用，但先确认目标和范围，不能把无关素材/片段整体发给服务端。保存完整 `get-project` 快照，不能使用 compact 输出代替。
 5. 按 [工程交换契约](exchange.md) 准备 bindings.json：每个实际素材有固定 source ID、真实 media ID、准备后文件 SHA-256 和云端可访问地址。大视频通过已有或用户指定的对象存储提供；不把 localhost、电脑绝对路径或原视频地址冒充准备后素材地址。没有可用传输位置时保留本地准备成果，询问上传位置。

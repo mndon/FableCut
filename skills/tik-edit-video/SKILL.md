@@ -1,17 +1,19 @@
 ---
 name: tik-edit-video
-description: 通过 tik-editvideo-cli 编辑 project.json 工程文件来剪辑视频（edits videos by editing project.json），支持素材导入、时间线编辑、工程读取与回写、预览和导出。适用于创建或修改视频剪辑项目，以及其他 skill 的 project.json 工程交接。
+description: 通过 tik-editvideo-cli 来剪辑视频，支持素材导入、时间线编辑、添加字幕、转场、工程读取与回写、预览和导出等。适用于创建或继续修改tik-editvideo-cli视频剪辑项目。
 ---
 
 # 使用 tik-editvideo-cli 剪辑视频
 
-本 skill 通过**编辑 `project.json`** 来剪辑视频（edits videos by **editing `project.json`**）。`project.json` 是 tik-editvideo-cli 的原生工程文件，保存素材、时间线片段、画幅、FPS 和 revision，可供其他 skill 读取、修改和交接。
+本 skill 通过操作 `tik-editvideo-cli` **编辑 `project.json`** 来剪辑视频（edits videos by **editing `project.json`**）。`project.json` 是 tik-editvideo-cli 的编辑项目文件，保存素材、时间线片段、画幅、FPS 和 revision，记录所有的文件导入和剪辑操作，可供其他 skill 读取、修改和交接。
 
 使用全局安装的 `tik-editvideo-cli` 读取和提交工程、预览及导出；本 skill 不内置 CLI。使用 `get-project`（不加 `--compact`）读取完整工程，局部修改优先用 `patch-project`，完整工程回写用 `set-project` 并保留最近完整读取的 revision，由 CLI 校验冲突并递增版本。
 
-## 初始化 CLI
+## 环境检查
 
-每次执行本 skill 时，先检查 CLI；仅在命令不存在时通过 npm 全局安装：
+同一任务、同一运行环境中，若其他 skill 已成功完成 环境检查 和 登录检查，复用对应结果，不重复检查。
+
+仅在 CLI 命令不存在时通过 npm 全局安装：
 
 ```bash
 if ! command -v tik-editvideo-cli >/dev/null 2>&1; then
@@ -19,26 +21,36 @@ if ! command -v tik-editvideo-cli >/dev/null 2>&1; then
 fi
 ```
 
-若 `npm` 不存在，停止并报告；命令执行失败按下述约束处理。
+运行：
+
+```bash
+tik-editvideo-cli doctor
+```
+
+检查 Node ≥18、ffmpeg、ffprobe；退出码为 0 且 `ok: true` 才通过。缺少依赖时报告用户并停止任务。
 
 ## 登录鉴权
 
-初始化 CLI 后先运行 `tik-editvideo-cli auth status`，以返回的 `logged_in` 判断 OpenAPI 登录状态。未登录是正常状态（退出码为 0）；此时运行：
+环境检查后，运行：
+
+```bash
+tik-editvideo-cli auth status
+```
+
+进行登陆校验，以返回的 `logged_in` 判断登录状态, true为已登陆，false为未登陆。
+
+当未登录时，运行：
 
 ```bash
 tik-editvideo-cli auth login
 ```
 
-CLI 会输出网页登录地址并尝试打开浏览器，随后自动轮询。把链接提供给用户，让用户在网页输入手机号和验证码、确认授权；保持登录命令运行直至成功或超时。不要代填验证码、读取或展示本地 API Key。无浏览器环境可加 `--no-browser`，让用户手动打开链接。
-
-成功后 CLI 自动保存 API Key，并返回 `logged_in: true` 和用户信息，再继续剪辑。密钥失效时 `auth status` 返回 `logged_in: false`，重新运行 `auth login`。网络错误或登录超时会返回非零退出码，按下述失败约束报告，不自动重试。
-
-仅在用户要求退出时运行 `tik-editvideo-cli auth logout`，它清除本地登录凭证。`auth status` 是远程登录检查，`status` 是本地预览服务检查，两者用途不同。
+CLI 会输出网页登录地址并尝试打开浏览器，随后自动轮询。把链接提供给用户，让用户在网页输入手机号和验证码、确认授权； 登陆成功后可再继续剪辑。网络错误或登录失败时，直接失败任务，不自动重试。
 
 ## 执行约束
 
 - 剪辑和导出仅通过 `tik-editvideo-cli` 执行，不检查或修改其实现。
-- CLI 或自动安装命令返回非零退出码时，立即停止并向用户报告原始错误。不要调试或修复 CLI，不要改用 MCP、直接 HTTP 请求或其他方式绕过失败。
+- CLI 返回非零退出码时，立即停止并向用户报告原始错误。不要调试或修复 CLI。
 - 剪辑直接操作本地项目，无需启动 HTTP 服务；交付预览时通过 `status` 启动或复用服务。
 - 需要 schema、属性、时间语义或剪辑配方时，只读取 [剪辑参考](references/editing-guide.md) 中与当前任务相关的章节。
 
@@ -50,6 +62,9 @@ CLI 会输出网页登录地址并尝试打开浏览器，随后自动轮询。�
 tik-editvideo-cli <命令> <参数>
 ```
 
+- `doctor`：检查 Node、ffmpeg、ffprobe，返回 `ok` 与逐项 `checks`。
+- `download --url <URL> --output <路径>`：通用下载，返回绝对 `path`。
+- `asr --path <绝对路径> [--output <路径>]`：语音转文字，返回 `json_url`；指定输出时另返回已保存的 `path`。
 - `auth status`：校验已保存的 API Key，返回登录状态和用户信息。
 - `auth login`：发起网页登录授权并轮询，成功后自动保存 API Key。
 - `auth logout`：清除本地 API Key；不会撤销服务端密钥。
@@ -146,9 +161,7 @@ tik-editvideo-cli export --project product-reel --output ./product-reel.mp4
 ## 剪辑原则
 
 - 满足 `in + duration × speed ≤ media.duration`；变速关键帧需按速度积分检查源素材消耗。
-- 视频画面放 V1，标题、叠加和调整层放更高视频轨；音乐、对白和音效使用音频轨。
+- 视频画面放 V1，文字、叠加和调整层放更高视频轨；音乐、对白和音效使用音频轨。
 - 相关修改合并到一次 patch，避免多次往返和中间态。
 - 字幕与标题按用途选择字体，不要整条片重复同一种展示字体。
 - 交付前检查画幅、FPS、响度、字幕安全区、空隙和片尾音频淡出。
-- 最终导出需要本机 PATH 中有 ffmpeg，并安装 Chrome/Chromium；
-  CLI 会无头驱动浏览器合成器，不要另写 ffmpeg 时间线替代它。

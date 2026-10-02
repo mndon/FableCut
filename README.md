@@ -238,10 +238,10 @@ still need to be on your machine.
 The `tik-video-semantic-slicer-connector` skill connects local preparation to
 `tik-video-semantic-slicer` on an Aliyun Managed Agent. Users work with it as a
 video slicing editor: choose a product, hook and selling points, then preview
-and refine the cut. The client installs the connector, `tik-edit-video` and
-`tik-audio-asr`; the server installs `tik-video-semantic-slicer` and
+and refine the cut. The client installs the connector and `tik-edit-video`; the server installs `tik-video-semantic-slicer` and
 `tik-edit-video`. The connector keeps media preparation and transport helpers,
-delegating ASR and editor operations to their respective skills. It sends a native
+runs `tik-editvideo-cli asr` / `download` directly for transcription and reuse,
+and delegates editor operations to `tik-edit-video`. It sends a native
 FableCut `project.json` with a separate request, receives the edited project and
 result receipt, restores local media references, and opens the client preview.
 Run/input hashes and client revision checks prevent importing another job's
@@ -540,3 +540,46 @@ remain valid and are not automatically rotated.
 
 These commands do not start the local editor server. The existing `status`
 command still controls local preview. Local editing remains available offline.
+
+## CLI dependency checks, ASR and downloads
+
+`tik-editvideo-cli doctor` checks the running Node version (18 or newer), ffmpeg
+and ffprobe on PATH. It prints `{ok, checks}`, with an `ok` flag and version or
+error for each dependency, and exits with code 0 only when all checks pass.
+It does not install dependencies, access the network or start the editor.
+Skills run doctor and `auth status` once per task and execution environment;
+subsequent skills reuse successful checks. Client and cloud environments check
+separately. A signed-out auth status still exits with code 0: inspect `logged_in`.
+
+```bash
+tik-editvideo-cli doctor
+tik-editvideo-cli auth status
+tik-editvideo-cli asr --path /absolute/path/source.mp4
+tik-editvideo-cli asr --path /absolute/path/source.mp4 --output ./audio.json
+tik-editvideo-cli download --url "https://example.com/file" --output ./file
+```
+
+ASR uses the saved CLI login key (not `TIK_API_KEY`) and the existing gateway at
+`https://skgw-tik.tttci.com/open`; `--api-url` selects the credential origin,
+not the ASR gateway. It supports MP3, WAV, M4A and AAC audio, and MP4, MOV, MKV,
+AVI, WebM, M4V, FLV, TS, MTS, M2TS and WMV video. Video uses its first audio
+stream, with temporary audio cleaned up on completion or failure. Audio metadata
+requires ffprobe; video extraction also requires ffmpeg. Tasks poll every three
+seconds for up to 30 minutes. HTTPS certificate verification remains enabled.
+
+Without `--output`, ASR returns only `{"json_url":"…"}`. With it, ASR downloads
+and validates `rich_result` and `channel`, preserves the original JSON bytes and
+returns `{"json_url":"…","path":"<absolute path>"}`. A null rich_result is valid.
+If transcription succeeds but saving fails, the error retains json_url so it can
+be downloaded again without submitting another transcription task.
+
+`download --url <URL> --output <path>` downloads arbitrary HTTP(S) files,
+including binary data, without CLI credentials or ASR validation. It allows up
+to five HTTP(S) redirects and uses a 60-second download timeout. ASR consumers
+validate downloaded transcripts themselves. Both commands create parent
+directories, resolve relative output paths against the current directory, refuse
+to overwrite existing files and clean up incomplete downloads. Successful download
+returns `{"path":"<absolute path>"}`. These commands need no project, browser or
+local editor server. The semantic slicer and connector skills run these ASR and
+download commands directly; `tik-edit-video` lists the ASR command and handles
+editor operations. The separate ASR skill has been removed.

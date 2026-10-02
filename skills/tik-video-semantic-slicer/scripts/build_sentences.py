@@ -4,13 +4,10 @@ Split phrases by punctuation using reliable word timestamps. No timestamp interp
 """
 import argparse
 import re
-import sys
 from pathlib import Path
 
-from common import EPS, main_guard, number, read_json, unique_map, write_json
+from common import EPS, main_guard, number, read_json, unique_map, write_json, validate_channels
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tik-audio-asr" / "scripts"))
-from transcribe import ToolError, validate_channels
 
 PUNCT = "，。！？；、：…,.!?;:\n—-"
 PATTERN = re.compile(r"[^" + re.escape(PUNCT) + r"]+(?:[" + re.escape(PUNCT) + r"]+)?")
@@ -71,10 +68,7 @@ def build(sources, no_split=False):
             raise ValueError("Source and transcript paths must be absolute")
         raw = read_json(source["transcript"])
         rich = raw["rich_result"]
-        try:
-            channels = validate_channels(raw.get("channel"), rich)
-        except ToolError as exc:
-            raise ValueError(exc.message) from exc
+        channels = validate_channels(raw.get("channel"), rich)
         if rich is None:
             raise ValueError(f"Empty ASR transcript: {sid}")
         total = number(rich["duration"], "ASR duration") / 1000

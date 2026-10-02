@@ -1,14 +1,11 @@
 """Offline regressions for editorial boundaries and the local CLI contracts."""
 import copy
-import importlib.util
 import json
-import os
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
 import unittest
-from unittest.mock import patch
 
 from test_pipeline import (SKILL, apply_ops, build, content_fixture, estimate, findings,
                            fixture, query, render, reviewed, review_draft, validate_review)
@@ -153,15 +150,6 @@ class EditorialTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertTrue(json.loads(result.stdout)["in_range"])
 
-    def test_environment_check_never_emits_values(self):
-        path = SKILL.parent / "tik-audio-asr/scripts/check_environment.py"
-        spec = importlib.util.spec_from_file_location("check_environment", path)
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-        with patch.dict(os.environ, {"TIK_API_KEY": "synthetic-secret", "FABLECUT_TOKEN": "synthetic-token"}):
-            result = module.check()
-            self.assertEqual(result["TIK_API_KEY"], "configured")
-            self.assertNotIn("synthetic", json.dumps(result))
 
 
 if __name__ == "__main__":

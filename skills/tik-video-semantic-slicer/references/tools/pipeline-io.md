@@ -1,6 +1,6 @@
 # 数据契约与本地工具
 
-命令中的 SKILL_DIR、RUN_DIR 为绝对路径。数据脚本仅需 Python 3 标准库；媒体准备需 ffprobe/ffmpeg，转写遵循 tik-audio-asr。不在临时 Python 中猜 JSON 形状或用字符串替换编辑数据。
+命令中的 SKILL_DIR、RUN_DIR 为绝对路径。数据脚本仅需 Python 3 标准库；媒体准备需 ffprobe/ffmpeg；转写直接运行 `tik-editvideo-cli asr`，已有结果通过 `tik-editvideo-cli download` 下载复用。不在临时 Python 中猜 JSON 形状或用字符串替换编辑数据。
 
 ## 文件与时间
 
@@ -21,7 +21,7 @@
 
 ## 准备素材
 
-新素材先准备，成功后才进入 ASR 和剪辑；本步无需转写凭据。已有 ASR/工程保留素材绑定，按下节复用。
+新素材先准备，成功后才进入 ASR 和剪辑；本步不提交转写任务。已有 ASR/工程保留素材绑定，按下节复用。
 
 ```bash
 python3 "$SKILL_DIR/scripts/prepare_video.py" "/绝对路径/素材.mp4" --out-dir "$RUN_DIR/intermediate/s1"
@@ -33,12 +33,13 @@ python3 "$SKILL_DIR/scripts/prepare_video.py" "/绝对路径/素材.mp4" --out-d
 
 ## 获取转写
 
-先复用与 `source.path` 绑定的本地 JSON 或工程 `media.asrUrl`，跳过凭据检查、音频提取和转写。若需检查旧素材是否适用，使用独立检查目录运行准备脚本并加 `--existing-asr`，需要归一化时会拒绝；报告需新作业与对应 ASR，不把旧 ASR 绑定到新素材。
+先复用与 `source.path` 绑定的本地 JSON 或工程 `media.asrUrl`，跳过音频提取和转写，复用本任务已通过的环境与登录检查。若需检查旧素材是否适用，使用独立检查目录运行准备脚本并加 `--existing-asr`，需要归一化时会拒绝；报告需新作业与对应 ASR，不把旧 ASR 绑定到新素材。
 
-需要新转写时，先执行安全环境检查；缺凭据停止，不搜索 shell 配置：
+若本任务及当前环境尚未成功检查，依次运行下列命令；doctor 需退出码为 0 且 `ok: true`，auth status 以 `logged_in` 判断登录状态。未登录时运行 `tik-editvideo-cli auth login`，把返回的授权链接提供给用户，登录成功后继续；检查或登录失败时停止并报告，不搜索 shell 配置：
 
 ```bash
-python3 "$SKILL_DIR/../tik-audio-asr/scripts/check_environment.py"
+tik-editvideo-cli doctor
+tik-editvideo-cli auth status
 ```
 
 将准备结果已写入的 `source.path` 设为 `SOURCE_PATH`，提取完整临时 MP3（保留补入的静音）后复核：
@@ -48,19 +49,19 @@ ffmpeg -nostdin -v error -n -i "$SOURCE_PATH" -map 0:a:0 -vn -ac 1 -ar 16000 -c:
 python3 "$SKILL_DIR/scripts/probe_video.py" "$SOURCE_PATH" --audio "$RUN_DIR/intermediate/s1/audio.mp3" --out "$RUN_DIR/intermediate/s1/audio_info.json"
 ```
 
-原点差>0.1秒、提取音频与实际素材时长差>0.5秒失败；检查准备和提取步骤，不伪造时间戳。复核成功后转写获取 JSON URL：
+原点差>0.1秒、提取音频与实际素材时长差>0.5秒失败；检查准备和提取步骤，不伪造时间戳。复核成功后运行 `tik-editvideo-cli asr` 完成转写，`--output` 同时下载并保存原始 JSON：
 
 ```bash
-python3 "$SKILL_DIR/../tik-audio-asr/scripts/transcribe.py" transcribe "$RUN_DIR/intermediate/s1/audio.mp3"
+tik-editvideo-cli asr --path "$RUN_DIR/intermediate/s1/audio.mp3" --output "$RUN_DIR/intermediate/s1/audio.json"
 ```
 
-将返回的 `json_url` 保存为该 source 的 `asr_url`，再下载原始内容到 `transcript` 指定的 audio.json；不要把 URL 包装对象当成转写正文：
+将返回的 `json_url` 保存为该 source 的 `asr_url`，`path` 保存为 `transcript`。不要把 URL 包装对象当成转写正文。复用已有 URL 或转写成功后下载失败时，只下载，不重新转写：
 
 ```bash
-python3 "$SKILL_DIR/../tik-audio-asr/scripts/download_result.py" "$ASR_URL" --output "$RUN_DIR/intermediate/s1/audio.json"
+tik-editvideo-cli download --url "$ASR_URL" --output "$RUN_DIR/intermediate/s1/audio.json"
 ```
 
-原始 JSON 使用 `rich_result` 和 `channel`。`rich_result` 为空或没有句子时停止选句，不自动重转。
+通用 download 不校验 ASR 格式，后续 build_sentences 校验原始 JSON 中的 `rich_result` 和 `channel`。`rich_result` 为空或没有句子时停止选句，不自动重转。
 
 `ASR_URL` 使用真实返回地址。转写成功后清理临时音频，保留 prepared.mp4；下载失败保留 URL 并报告，不重新转写。
 

@@ -320,6 +320,9 @@ function printHelp() {
   console.log(`tik-editvideo-cli - local editing, preview, and export
 
 Usage:
+  tik-editvideo-cli doctor
+  tik-editvideo-cli download --url <http(s)-url> --output <path>
+  tik-editvideo-cli asr --path <absolute-audio-or-video-path> [--output <json-path>] [--api-url <origin>]
   tik-editvideo-cli auth status|login|logout [--api-url <origin>] [--no-browser]
   tik-editvideo-cli list-projects
   tik-editvideo-cli create-project --name <name> [--id <id>]
@@ -340,13 +343,33 @@ HOST / PORT configure the local server (default 127.0.0.1:7777).
 system browser is used; if missing, Chrome for Testing is downloaded automatically.
 Default download mirror: https://cdn.npmmirror.com/binaries/chrome-for-testing
 FABLECUT_BROWSER_DOWNLOAD_BASE_URL overrides the HTTPS browser download base.
-Export requires ffmpeg; optimized also requires ffprobe.`);
+Export requires ffmpeg; optimized also requires ffprobe.
+Doctor checks Node >=18, ffmpeg and ffprobe without installing or starting services.
+Download saves any HTTP(S) file without credentials and refuses existing outputs.
+ASR uses saved CLI credentials and the ASR gateway; --output also downloads and
+validates the result JSON. Without --output it returns only json_url.`);
 }
 
 async function main(argv = process.argv.slice(2)) {
   const { positionals, options } = parseArgs(argv);
   const command = positionals[0];
   if (!command || command === "help" || options.help) { printHelp(); return; }
+  if (command === "doctor") {
+    const result = require("./doctor").doctor();
+    console.log(JSON.stringify(result, null, 2));
+    if (!result.ok) process.exitCode = 1;
+    return;
+  }
+  if (command === "download") {
+    console.log(JSON.stringify(await require("./operation").withCancellation(signal => require("./download").downloadFile(requireOption(options, "url"), requireOption(options, "output"), { signal })), null, 2));
+    return;
+  }
+  if (command === "asr") {
+    requireOption(options, "path");
+    for (const key of ["output", "api-url"]) if (options[key] !== undefined) requireOption(options, key);
+    console.log(JSON.stringify(await require("./operation").withCancellation(signal => require("./asr").runAsr(options, { signal })), null, 2));
+    return;
+  }
   if (command === "auth") {
     console.log(JSON.stringify(await require("./auth").runAuth(positionals[1], options), null, 2));
     return;

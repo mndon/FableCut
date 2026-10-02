@@ -179,3 +179,21 @@ remain valid and are not automatically rotated.
 
 These commands do not start the local editor server. The existing `status`
 command still controls local preview. Local editing remains available offline.
+
+## 依赖检查、转写和通用下载
+
+```bash
+tik-editvideo-cli doctor
+tik-editvideo-cli auth status
+tik-editvideo-cli asr --path "/绝对路径/素材.mp4"
+tik-editvideo-cli asr --path "/绝对路径/素材.mp4" --output "./audio.json"
+tik-editvideo-cli download --url "https://example.com/file" --output "./file"
+```
+
+doctor 检查 Node ≥18、ffmpeg、ffprobe，输出 `{ok, checks}`；全部通过退出码为 0，失败为 1，不安装依赖或启动服务。skill 在同一任务及环境中复用已成功的 doctor 和登录检查；`auth status` 按 `logged_in` 判断。
+
+ASR 使用 CLI 保存的登录凭据，不读取 `TIK_API_KEY`；固定访问 `https://skgw-tik.tttci.com/open`，`--api-url` 只选择凭据所属环境。支持 MP3/WAV/M4A/AAC 和 MP4/MOV/MKV/AVI/WebM/M4V/FLV/TS/MTS/M2TS/WMV；视频提取第一音轨并清理临时文件。元数据需要 ffprobe，视频提取还需要 ffmpeg。每 3 秒轮询，30 分钟超时。
+
+省略输出时返回 `{"json_url":"…"}`；指定 `--output` 时下载并校验 rich_result/channel，保存原始字节并返回 `{"json_url":"…","path":"<绝对路径>"}`。rich_result 为 null 仍是有效结果。转写完成但保存失败的错误保留 json_url，使用 download 重试，避免重复转写。
+
+通用 download 支持任意 HTTP(S) 文件及二进制数据，不携带登录凭据、不校验 ASR 格式；最多 5 次 HTTP(S) 重定向，下载超时 60 秒，保持 TLS 证书校验。成功返回 `{"path":"<绝对路径>"}`。两种输出都自动创建父目录、按当前目录解析相对路径、拒绝覆盖已有文件，失败清理临时文件。命令无需工程、浏览器或本地编辑服务。

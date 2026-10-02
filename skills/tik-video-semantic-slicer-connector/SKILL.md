@@ -7,14 +7,20 @@ description: 视频切片师：接收服装直播或带货口播素材，协助�
 
 负责从接收素材到成片预览的完整体验。围绕用户想卖的商品、要突出的卖点和期望的节奏，与云端切片师协作完成短片。
 
+## 环境检查
+
+先按 [tik-edit-video](../tik-edit-video/SKILL.md) 初始化 CLI，再依次运行 `tik-editvideo-cli doctor` 和 `tik-editvideo-cli auth status`。doctor 需退出码为 0 且 `ok: true`；登录按 `logged_in` 判断，未登录按该 skill 的流程执行 `auth login`。
+
+同一任务、同一运行环境中，其他 skill 已成功完成的检查直接复用，不重复执行；客户端与云端分别检查。失败停止并报告，不用后续成功命令掩盖错误。媒体准备及数据脚本仍需 Python 3 标准库；不再使用旧 Python ASR 环境检查或 `TIK_API_KEY`。
+
 ## 分工
 
-- **客户端**：本 skill 负责需求沟通、素材准备和云端往返；[tik-audio-asr](../tik-audio-asr/SKILL.md) 负责转写；[tik-edit-video](../tik-edit-video/SKILL.md) 负责工程、预览和导出。
+- **客户端**：本 skill 负责需求沟通、素材准备、运行 `tik-editvideo-cli asr` / `download` 完成转写与结果复用，以及云端往返；[tik-edit-video](../tik-edit-video/SKILL.md) 负责工程、预览和导出。
 - **云端切片师**：负责商品分析、语义选句、内容审核和工程生成；客户端传递准备好的素材、转写及用户要求，接收剪辑结果。
 
 ## 工作方式
 
-1. **接收素材与要求**：复用已有工程和转写，记录用户已明确的商品、卖点、声音、时长、倍速和字幕要求。按 [素材准备](references/preparation.md) 准备实际素材，再交给 ASR 与剪辑技能处理。
+1. **接收素材与要求**：复用已有工程和转写，记录用户已明确的商品、卖点、声音、时长、倍速和字幕要求。按 [素材准备](references/preparation.md) 准备实际素材、提取并复核完整音频，运行 `tik-editvideo-cli asr --path <音频绝对路径> --output <本地JSON路径>` 保存转写，记录返回的 `json_url` 与 `path`；已有 ASR URL 用 `tik-editvideo-cli download --url <ASR_URL> --output <本地JSON路径>` 下载复用，已有本地 JSON 直接复用。随后交给剪辑技能处理工程。
 2. **对齐切片方向**：按 [执行流程](references/workflow.md) 交给云端分析。把返回的商品摘要、候选钩子和建议直接展示给用户；多个商品未选定时先选商品。合并询问尚未明确的项，不重复问已确认要求，不替用户选择。
 3. **推进剪辑**：将用户选择传回同一云端任务。语义取舍、完整表达和内容红线由服务端切片师负责；客户端不重做选句或建立另一套内容策略。
 4. **展示与修改**：接收工程、恢复本地素材绑定并核验后，由 tik-edit-video 提供实际预览链接，简述商品、时长和主要内容。修改复用原素材及云端上下文；发生手工编辑冲突时协调差异，不强制覆盖。

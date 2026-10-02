@@ -12,6 +12,17 @@ TRANSITIONS.update(f"{kind}-{direction}" for kind in ("slide", "wipe")
                    for direction in ("left", "right", "up", "down"))
 
 
+def validate_channels(value, rich):
+    """Validate source voice IDs locally, without an ASR skill dependency."""
+    if not isinstance(value, list) or any(type(cid) is not int for cid in value) or len(set(value)) != len(value):
+        raise ValueError("ASR result needs a valid channel array; legacy formats are unsupported")
+    if rich is not None:
+        for sentence in rich["sentences"]:
+            if type(sentence["channel_id"]) is not int or sentence["channel_id"] not in value:
+                raise ValueError("channel must include every sentence voice ID")
+    return value
+
+
 def read_json(path):
     return json.loads(Path(path).read_text(encoding="utf-8"))
 

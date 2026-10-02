@@ -7,6 +7,12 @@ description: 将服装直播、带货口播按语义精剪为35–90秒短片。
 
 模型负责商品识别、语义取舍与视听判断；Python 负责稳定编号、时间换算、数据校验。工程通过不代表内容合格。
 
+## 环境检查
+
+先按 [tik-edit-video](../tik-edit-video/SKILL.md) 初始化 CLI，再依次运行 `tik-editvideo-cli doctor` 和 `tik-editvideo-cli auth status`。doctor 需退出码为 0 且 `ok: true`；登录按 `logged_in` 判断，未登录按该 skill 的流程执行 `auth login`。
+
+同一任务、同一运行环境中，其他 skill 已成功完成的检查直接复用，不重复执行；客户端与云端分别检查。失败停止并报告，不用后续成功命令掩盖错误。媒体准备及数据脚本仍需 Python 3 标准库。
+
 ## 两种用法
 
 - **客户端直接剪辑**：安装在客户端 Agent，接收用户需求与视频源文件，按下方流程准备、转写和剪辑，默认交付预览，按需导出 MP4。
@@ -18,7 +24,7 @@ description: 将服装直播、带货口播按语义精剪为35–90秒短片。
 
 1. 沿用用户要求，建立独立 `<作业名>_<YYYYMMDD_HHMMSS>` run；同名追加序号。中间数据放 `intermediate/`，用户要求导出时成片放根目录，不覆盖素材或已交付文件。按当前模型与工具确认视听、浏览器预览能力，命令存在不代表模型可视听。
 2. **准备素材**：读取 [数据契约](references/tools/pipeline-io.md)，对各新素材先运行 `prepare_video.py`。成功后读取 preparation.json，将返回的 `path`、`probe` 和追溯字段写入 sources.json；后续 ASR 与剪辑只使用该 `source.path`。失败停止，不先转写原文件。已有 ASR/工程按契约复用绑定，不静默更换素材。
-3. **获取转写**：读取 [tik-audio-asr](../tik-audio-asr/SKILL.md)。新转写此时才检查凭据，从 `source.path` 提取完整音频，复核后转写；保存 ASR JSON URL，下载原始 JSON。已有工程按 tik-edit-video 读取对应 `asrUrl` 并下载复用，无需转写凭据；已有本地 JSON 直接复用。缺凭据不搜索 shell 配置，下载失败不重转。
+3. **获取转写**：按 [数据契约的获取转写步骤](references/tools/pipeline-io.md#获取转写) 执行。新转写复用上述环境与登录检查，从 `source.path` 提取并复核完整音频，再运行 `tik-editvideo-cli asr --path <音频绝对路径> --output <本地JSON路径>` 完成转写并保存原始 JSON，记录返回的 `json_url` 和 `path`。已有工程运行 `tik-editvideo-cli get-project --project <ID>` 读取对应 `media.asrUrl`，再用 `tik-editvideo-cli download --url <ASR_URL> --output <本地JSON路径>` 下载复用；已有本地 JSON 直接复用。缺凭据不搜索 shell 配置，下载失败不重转。
 4. **建立索引**：按原始结果的 `channel` 生成稳定短语与声音摘要，用户时间范围只限制候选；无可用内容时停止选句。读一次完整紧凑索引；后续按编号查上下文/words，不重读大 JSON、不重建编号。
 5. 读取 [主播档案](references/business/apparel/hosts.md)，按品牌/别名优先、主播兜底匹配；不凭 ASR 声音标签认定真人。用户参数优先，档案红线叠加品类红线，身份冲突集中询问。
 

@@ -139,8 +139,8 @@ class BridgeTests(unittest.TestCase):
         self.addCleanup(server.shutdown)
         project = {"media": [{"id": "m1", "asrUrl": f"http://127.0.0.1:{server.server_port}/asr.json"}]}
         other = self.root / "other-device" / "audio.json"
-        result = subprocess.run([sys.executable, str(SKILL.parent / "tik-audio-asr/scripts/download_result.py"),
-                                 project["media"][0]["asrUrl"], "--output", str(other)],
+        result = subprocess.run(["node", str(SKILL.parents[1] / "cli/bin/tik-editvideo-cli.js"), "download",
+                                 "--url", project["media"][0]["asrUrl"], "--output", str(other)],
                                 capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(other.read_bytes(), body)
@@ -224,11 +224,11 @@ class BridgeTests(unittest.TestCase):
     def test_isolated_skill_runs_with_declared_dependencies(self):
         isolated = self.root / "skills" / "tik-video-semantic-slicer"
         shutil.copytree(SKILL, isolated, ignore=shutil.ignore_patterns("__pycache__"))
-        for dependency in ("tik-audio-asr", "tik-edit-video"):
+        for dependency in ("tik-edit-video",):
             shutil.copytree(SKILL.parent / dependency, isolated.parent / dependency,
                             ignore=shutil.ignore_patterns("__pycache__"))
         self.assertEqual({p.name for p in isolated.parent.iterdir()},
-                         {isolated.name, "tik-audio-asr", "tik-edit-video"})
+                         {isolated.name, "tik-edit-video"})
         one = self.source()
         sources_file = self.root / "sources.json"
         write_json(sources_file, {"sources": [one]})
