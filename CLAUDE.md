@@ -98,7 +98,7 @@ projects/<id>/analysis/
 library/                       # shared reusable assets
 ```
 
-Use the project picker in the top bar; opening `/?project=<id>` in separate tabs
+Use the project picker in the top bar; opening `/?project_id=<id>` in separate tabs
 allows simultaneous editing. REST calls take `?project=<id>`. MCP editing tools
 take optional `projectId`; omit it to use the MCP session selection, changed by
 `fablecut_select_project`. Media URLs are project-qualified as
@@ -142,14 +142,21 @@ Or install the standalone CLI (Node 18+, no npm runtime dependencies):
 
 ```bash
 npm install -g tik-editvideo-cli
-tik-editvideo-cli create-project --name "My Edit" --id my-edit
-tik-editvideo-cli get-project --project my-edit --compact
-tik-editvideo-cli status --project my-edit
+tik-editvideo-cli create-project --name "My Edit"
+# Use the project_id returned by create-project in subsequent commands.
+tik-editvideo-cli get-project --project-id <returned-project_id> --compact
+tik-editvideo-cli status --project-id <returned-project_id>
 ```
+
+`create-project --name <semantic-name>` prefixes the name with the current local
+date (`YYYY-MM-DD_<semantic-name>`), generates a UUID v4 project ID, and returns
+`{project_id, name}`. `--id` is rejected; use the returned `project_id` for subsequent commands.
+Existing projects retain their IDs and names. Project commands use
+`--project-id <id>`.
 
 The CLI edits local projects directly: `list-projects`, `create-project`,
 `get-project`, `patch-project`, `set-project`, and `import-media` work without an
-HTTP server. Always pass `--project <id>` to editing commands; separate CLI
+HTTP server. Always pass `--project-id <id>` to editing commands; separate CLI
 processes can edit independent projects simultaneously. CLI, HTTP, and MCP
 project writes share per-project locks and atomic replacement. Patches read and
 modify the latest document under the lock. CLI `set-project` takes the revision
@@ -165,7 +172,7 @@ configuration described above. On first use, an existing `~/.fablecut` is rename
 when the new directory does not yet exist; existing directories are never merged.
 The CLI serves its bundled runtime without reading source checkout files.
 
-`status [--project <id>]` checks the local HTTP server, starts it in the background
+`status [--project-id <id>]` checks the local HTTP server, starts it in the background
 if absent, waits for readiness, and returns JSON with `ok`, `started`, `pid`,
 `dataDir`, and `url`. With a project it also returns `projectId` and `projectUrl`.
 It reuses a server only when its identity and data directory match; an occupied
@@ -182,7 +189,7 @@ otherwise those fields may remain absent until the browser probes the file.
 `media.asrUrl`; `addMedia` accepts the same optional field. Compact summaries mark
 these media with `asr=yes`; read the full project for URLs.
 
-The `tik-edit-video` skill verifies the edit, runs `status --project <id>`, and
+The `tik-edit-video` skill verifies the edit, runs `status --project-id <id>`, and
 hands over the returned preview link. It exports only when explicitly requested,
 including a reply of “导出最终视频”; otherwise it invites further adjustments.
 Use `tik-editvideo-cli --help` for command arguments.
@@ -687,7 +694,7 @@ Realtime export, and `/api/export/begin` all use this value; pass the same
 ## Export
 
 Export can be started in the UI (Export button → dialog) or headlessly with
-`tik-editvideo-cli export --project <id> --output <file.mp4>`. Three engines: **Fast** (browser
+`tik-editvideo-cli export --project-id <id> --output <file.mp4>`. Three engines: **Fast** (browser
 renders each frame with the normal compositor — including SVG frames, keys and
 AI masks — streams JPEG frames + an offline WAV mix to the server, ffmpeg
 encodes a CRF-18 faststart MP4 into the project's `exports/`) and **Realtime**
@@ -729,7 +736,7 @@ the timeline in ffmpeg.
 
 The third UI engine, **Optimized (ffmpeg + frame cache)**, keeps Fast and
 Realtime unchanged, including their default selection. CLI users select it with
-`tik-editvideo-cli export --project <id> --engine optimized --output final.mp4`;
+`tik-editvideo-cli export --project-id <id> --engine optimized --output final.mp4`;
 `--engine fast` remains the default. Optimized additionally requires ffprobe.
 It uses the same compositor, SVG/AI preparation, offline audio mix, JPEG quality
 0.95, x264 CRF 18 and BT.709 output as Fast. Hardware encoding and parallel

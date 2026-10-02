@@ -15,12 +15,17 @@ FableCut 的零 npm 运行时依赖命令行工具，支持直接操作本地项
 
 ```bash
 npm install -g tik-editvideo-cli
-tik-editvideo-cli create-project --name "产品短片" --id product-reel
-tik-editvideo-cli get-project --project product-reel --compact
-tik-editvideo-cli status --project product-reel
+tik-editvideo-cli create-project --name "产品短片"
+tik-editvideo-cli get-project --project-id <返回的project_id> --compact
+tik-editvideo-cli status --project-id <返回的project_id>
 # 用户明确要求导出后：
-tik-editvideo-cli export --project product-reel --output ./final.mp4
+tik-editvideo-cli export --project-id <返回的project_id> --output ./final.mp4
 ```
+
+`create-project --name <语义名称>` 按本机当天日期生成 `YYYY-MM-DD_语义名称`，
+自动生成 UUID v4 项目 ID，返回 `{project_id, name}`。不支持 `--id`，后续命令使用返回的
+`project_id`；已有项目的名称和 ID 保持不变。
+项目参数为 `--project-id <ID>`。
 
 CLI 将项目、素材、分析结果、导出文件和共享素材库固定保存到
 `~/.tik-editvideo-cli/`：
@@ -39,11 +44,11 @@ CLI 将项目、素材、分析结果、导出文件和共享素材库固定保�
 `--data-dir` 不再支持，外部 `FABLECUT_DATA_DIR` 不影响 CLI。CLI 包含自己的
 Web 编辑器运行时，不依赖源码仓库；独立服务和 MCP 原有目录配置保持兼容。
 
-项目创建、读写和素材导入不启动 HTTP 服务。编辑时显式指定 `--project <ID>`，
+项目创建、读写和素材导入不启动 HTTP 服务。编辑时显式指定 `--project-id <ID>`，
 可同时操作多个独立项目；同项目修改使用共享锁及原子写入，过期的完整工程保存会报冲突。
 `import-media` 直接复制本地素材；有 ffprobe 时会补充时长和尺寸。
 
-`status [--project <ID>]` 检查并按需启动后台服务，返回 JSON 中的 `url`；指定项目时
+`status [--project-id <ID>]` 检查并按需启动后台服务，返回 JSON 中的 `url`；指定项目时
 还返回 `projectId` 和 `projectUrl`。已有服务必须匹配当前工作区，否则报错。
 重复调用不会重复启动服务；`server start` 保留前台启动方式。
 `status`、`server start` 和 `export` 支持 `--host` / `--port`，优先于 `HOST` / `PORT`，
@@ -81,7 +86,7 @@ Web 编辑器运行时，不依赖源码仓库；独立服务和 MCP 原有目�
 导入素材时可附带已有 ASR 结果地址：
 
 ```bash
-tik-editvideo-cli import-media --project default --path /absolute/path/intro.mp4 --asr-url "https://example.com/intro-asr.json"
+tik-editvideo-cli import-media --project-id default --path /absolute/path/intro.mp4 --asr-url "https://example.com/intro-asr.json"
 ```
 
 `--asr-url` 为可选 HTTP(S) 地址，保存为 `media.asrUrl`；`addMedia` 也支持该字段。
@@ -149,7 +154,7 @@ npm unlink -g tik-editvideo-cli
 ### Optimized 导出
 
 ```bash
-tik-editvideo-cli export --project product-reel --engine optimized --output ./final.mp4
+tik-editvideo-cli export --project-id <返回的project_id> --engine optimized --output ./final.mp4
 ```
 
 默认仍为 `--engine fast`。新增方式需要 ffmpeg、ffprobe，浏览器由 CLI 自动准备，

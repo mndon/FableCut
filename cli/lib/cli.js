@@ -263,7 +263,7 @@ function exportFileInfo(file) {
 async function exportProject(client, options, started) {
   const engine = options.engine === undefined ? "fast" : options.engine;
   if (!["fast", "optimized"].includes(engine)) throw new CliError("--engine must be fast or optimized");
-  const projectId = requireOption(options, "project");
+  const projectId = requireOption(options, "project-id");
   const project = await getProject(client, projectId);
   const ffmpeg = await client.request("GET", "/api/export/ffmpeg");
   if (!ffmpeg.available) throw new CliError("The FableCut server cannot find ffmpeg on PATH");
@@ -278,7 +278,7 @@ async function exportProject(client, options, started) {
   const requestId = require("crypto").randomBytes(16).toString("hex");
   const profile = fs.mkdtempSync(path.join(os.tmpdir(), "tik-editvideo-cli-chrome-"));
   const url = new URL(client.base.href);
-  url.searchParams.set("project", projectId);
+  url.searchParams.set("project_id", projectId);
   url.searchParams.set("cliExport", requestId);
   url.searchParams.set("cliExportName", name);
   url.searchParams.set("cliExportEngine", engine);
@@ -325,18 +325,20 @@ Usage:
   tik-editvideo-cli asr --path <absolute-audio-or-video-path> [--output <json-path>] [--api-url <origin>]
   tik-editvideo-cli auth status|login|logout [--api-url <origin>] [--no-browser]
   tik-editvideo-cli list-projects
-  tik-editvideo-cli create-project --name <name> [--id <id>]
-  tik-editvideo-cli get-project --project <id> [--compact]
-  tik-editvideo-cli patch-project --project <id> --ops '<JSON array>'
-  tik-editvideo-cli set-project --project <id> --document '<JSON object>' [--force]
-  tik-editvideo-cli import-media --project <id> --path <file> [--asr-url <url>]
-  tik-editvideo-cli status [--project <id>] [--host <host>] [--port <port>]
+  tik-editvideo-cli create-project --name <semantic-name>
+  tik-editvideo-cli get-project --project-id <id> [--compact]
+  tik-editvideo-cli patch-project --project-id <id> --ops '<JSON array>'
+  tik-editvideo-cli set-project --project-id <id> --document '<JSON object>' [--force]
+  tik-editvideo-cli import-media --project-id <id> --path <file> [--asr-url <url>]
+  tik-editvideo-cli status [--project-id <id>] [--host <host>] [--port <port>]
   tik-editvideo-cli server start [--host <host>] [--port <port>]
-  tik-editvideo-cli export --project <id> [--name <name>] [--output <mp4>] [--engine fast|optimized] [--force]
+  tik-editvideo-cli export --project-id <id> [--name <name>] [--output <mp4>] [--engine fast|optimized] [--force]
                      [--browser <path>] [--timeout <seconds>] [--host <host>] [--port <port>]
 
 Editing works without a server. status starts a background preview server if needed;
 export also starts it automatically. server start runs in the foreground.
+create-project names projects YYYY-MM-DD_<semantic-name> using the local date,
+generates a UUID v4, and returns {project_id, name}. --id is unsupported.
 Storage is fixed at .tik-editvideo-cli inside the OS user home directory.
 HOST / PORT configure the local server (default 127.0.0.1:7777).
 --browser / CHROME_PATH selects Chrome/Chromium for export. Otherwise a cached or
@@ -378,6 +380,8 @@ async function main(argv = process.argv.slice(2)) {
   const commands = ["server", "status", "list-projects", "create-project", "get-project", "patch-project", "set-project", "import-media", "export"];
   if (!commands.includes(command)) throw new CliError("Unknown command: " + command + " (run tik-editvideo-cli --help)");
   if (command === "server" && positionals[1] !== "start") throw new CliError("Use: tik-editvideo-cli server start");
+  if (command === "create-project" && options.id !== undefined)
+    throw new CliError("--id is no longer supported; create-project generates a UUID and returns it as project_id");
   const { initialize, ensureServer, connection } = require("./local");
   for (const key of ["host", "port"]) if (options[key] !== undefined) requireOption(options, key);
   const local = initialize(runtimeDir()), { store, paths } = local;
@@ -388,15 +392,22 @@ async function main(argv = process.argv.slice(2)) {
     process.env.PORT = String(config.port);
     require(path.join(local.runtime, "server.js"));
   } else if (command === "status") {
-    if (options.project !== undefined) requireOption(options, "project");
+    if (options["project-id"] !== undefined) requireOption(options, "project-id");
     print(await ensureServer(local, options));
   } else if (command === "list-projects") print(paths.listProjects());
-  else if (command === "create-project") print(store.create(requireOption(options, "name"), options.id === undefined ? undefined : requireOption(options, "id")));
+  else if (command === "create-project") {
+    const name = requireOption(options, "name").trim();
+    if (!name) throw new CliError("--name must contain a semantic project name");
+    const now = new Date();
+    const date = [now.getFullYear(), String(now.getMonth() + 1).padStart(2, "0"), String(now.getDate()).padStart(2, "0")].join("-");
+    const created = store.create(`${date}_${name}`, require("crypto").randomUUID());
+    print({ project_id: created.id, name: created.name });
+  }
   else if (command === "get-project") {
-    const id = store.context(requireOption(options, "project")).id, project = requireProject(store.read(id));
+    const id = store.context(requireOption(options, "project-id")).id, project = requireProject(store.read(id));
     console.log(options.compact ? compactProject(id, project) : JSON.stringify(project, null, 2));
   } else if (command === "patch-project") {
-    const id = store.context(requireOption(options, "project")).id;
+    const id = store.context(requireOption(options, "project-id")).id;
     const ops = parseJSON(requireOption(options, "ops"), "--ops", "array");
     let changes;
     const project = store.update(id, current => {
@@ -407,7 +418,7 @@ async function main(argv = process.argv.slice(2)) {
     });
     print({ ok: true, project: id, revision: project.revision, clips: project.clips.length, media: project.media.length, changes });
   } else if (command === "set-project") {
-    const id = store.context(requireOption(options, "project")).id;
+    const id = store.context(requireOption(options, "project-id")).id;
     const project = requireProject(parseJSON(requireOption(options, "document"), "--document", "object"));
     validateDocument(project);
     const saved = store.update(id, current => {
@@ -418,7 +429,7 @@ async function main(argv = process.argv.slice(2)) {
     });
     print({ ok: true, project: id, revision: saved.revision, response: { ok: true, revision: saved.revision } });
   } else if (command === "import-media") {
-    const id = store.context(requireOption(options, "project")).id, source = path.resolve(requireOption(options, "path"));
+    const id = store.context(requireOption(options, "project-id")).id, source = path.resolve(requireOption(options, "path"));
     const asrUrl = options["asr-url"] === undefined ? undefined : validateAsrUrl(requireOption(options, "asr-url"));
     if (!fs.statSync(source, { throwIfNoEntry: false })?.isFile()) throw new CliError("Media file not found: " + source);
     const kind = KIND_BY_EXT.get(path.extname(source).toLowerCase());
@@ -450,7 +461,7 @@ async function main(argv = process.argv.slice(2)) {
   } else if (command === "export") {
     const started = process.hrtime.bigint();
     if (options.engine !== undefined && !["fast", "optimized"].includes(options.engine)) throw new CliError("--engine must be fast or optimized");
-    requireOption(options, "project");
+    requireOption(options, "project-id");
     if (options.browser !== undefined) requireOption(options, "browser");
     const status = await ensureServer(local, options);
     await exportProject(new ExportClient(status.url), options, started);

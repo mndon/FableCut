@@ -49,7 +49,7 @@ function probe(url) {
 }
 async function ensureServer(local, options) {
   const { host, port, url } = connection(options);
-  if (options.project !== undefined) local.store.context(options.project);
+  if (options["project-id"] !== undefined) local.store.context(options["project-id"]);
   return local.store.withLock(path.join(local.dataDir, `.server-${port}.lock`), async () => {
     const check = async () => {
       const status = await probe(url);
@@ -83,9 +83,9 @@ async function ensureServer(local, options) {
       } catch (error) { if (child.pid) child.kill(); throw error; }
     }
     const result = { ok: true, started, pid: status.pid, dataDir: local.dataDir, url: url + "/" };
-    if (options.project !== undefined) {
-      result.projectId = local.store.context(options.project).id;
-      result.projectUrl = `${url}/?project=${encodeURIComponent(result.projectId)}`;
+    if (options["project-id"] !== undefined) {
+      result.projectId = local.store.context(options["project-id"]).id;
+      result.projectUrl = `${url}/?project_id=${encodeURIComponent(result.projectId)}`;
     }
     return result;
   });

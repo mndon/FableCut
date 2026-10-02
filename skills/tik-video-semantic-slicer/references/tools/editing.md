@@ -10,9 +10,9 @@
 tik-editvideo-cli create-project --name "服装语义切片"
 ```
 
-每个素材使用 `import-media --project <真实ID> --path <source.path绝对路径> --asr-url <对应source.asr_url>`；path 必须与转写素材一致，归一化后不导入 original_path、不再次调整 ASR 时间。成功 JSON 保存到该素材的 import.json，用 selection_tools.py bind-media 写入 sources.json。绑定时检查返回的 `media.asrUrl` 与 source 一致。素材 ID 与远端 media.src 均以 CLI 返回的信息为准。复用已注册素材时直接使用其真实 ID 与 asrUrl，不重复导入；旧作业没有 URL 时省略该参数，不伪造地址。
+每个素材使用 `import-media --project-id <真实ID> --path <source.path绝对路径> --asr-url <对应source.asr_url>`；path 必须与转写素材一致，归一化后不导入 original_path、不再次调整 ASR 时间。成功 JSON 保存到该素材的 import.json，用 selection_tools.py bind-media 写入 sources.json。绑定时检查返回的 `media.asrUrl` 与 source 一致。素材 ID 与远端 media.src 均以 CLI 返回的信息为准。复用已注册素材时直接使用其真实 ID 与 asrUrl，不重复导入；旧作业没有 URL 时省略该参数，不伪造地址。
 
-生成操作前运行 `get-project --project <真实ID>` 保存完整原生项目文档为 project.json，记录实际 revision。紧凑摘要只供快速检查，不能代替完整项目作为脚本输入。
+生成操作前运行 `get-project --project-id <真实ID>` 保存完整原生项目文档为 project.json，记录实际 revision。紧凑摘要只供快速检查，不能代替完整项目作为脚本输入。
 
 ## 生成与提交
 
@@ -27,7 +27,7 @@ python3 "$SKILL_DIR/scripts/build_edit_ops.py" --sentences "$RUN_DIR/intermediat
 将 ops.json 的内容作为单个字符串实参交给 CLI。下面是安全的文件读入方式：引用路径变量，命令替换只读取文件，JSON 内容不会作为 shell 代码再次解释。
 
 ```bash
-tik-editvideo-cli patch-project --project "$PROJECT_ID" --ops "$(cat "$RUN_DIR/intermediate/ops.json")"
+tik-editvideo-cli patch-project --project-id "$PROJECT_ID" --ops "$(cat "$RUN_DIR/intermediate/ops.json")"
 ```
 
 此命令单独执行并检查退出码；失败立即停止，不能接着导出、重新创建工程或执行替代接口。单次参数超过操作系统限制时停止并说明，先缩小本批操作后重新读工程规划；不临时实现一个替代客户端。
@@ -52,7 +52,7 @@ python3 "$SKILL_DIR/scripts/verify_output.py" --project "$RUN_DIR/intermediate/p
 
 默认不导出 MP4，也不检查导出依赖。提交并读回验证通过后，按可用能力在工程预览中检查画面、字幕安全区、音画同步和切点听感，按 editorial.md 更新记录；未检查的标为待验，不为验收自动导出。
 
-交付可点击的实际工程预览 URL，有待验项时简要说明即可。运行 `tik-editvideo-cli status --project <真实ID>`，使用返回的 `projectUrl`；本地地址不能称为外网可分享链接。
+交付可点击的实际工程预览 URL，有待验项时简要说明即可。运行 `tik-editvideo-cli status --project-id <真实ID>`，使用返回的 `projectUrl`；本地地址不能称为外网可分享链接。
 
 包含素材 asrUrl 的工程快照、配置、映射、内容审核记录保存在作业目录，不默认逐项贴出路径或完整脚本。用户要求时按 present.md 从最新工程渲染完整脚本。修改后同样交付预览 URL，不因历史导出自动重导。
 
@@ -61,7 +61,7 @@ python3 "$SKILL_DIR/scripts/verify_output.py" --project "$RUN_DIR/intermediate/p
 仅用户明确要求本次导出时执行本节，不另行询问确认。按 tik-edit-video 检查 Chrome/Chromium 等导出依赖，使用其 `export` 命令：
 
 ```bash
-tik-editvideo-cli export --project "$PROJECT_ID" --output "$RUN_DIR/服装语义切片_1.1x.mp4"
+tik-editvideo-cli export --project-id "$PROJECT_ID" --output "$RUN_DIR/服装语义切片_1.1x.mp4"
 ```
 
 示例输出名须替换为实际作业名/倍速。成片由 CLI 导出，CLI 出错停止。导出后再次读工程并确认与提交映射一致，避免把并发变化后的文件当成已验证作品：

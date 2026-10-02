@@ -224,7 +224,7 @@ async function callTool(name, args) {
       }).join(", ");
       const cap = (arr, n) => arr.length > n ? arr.slice(0, n).concat(`… +${arr.length - n} more`) : arr;
       return [
-        `Editor server: ${up ? "RUNNING — open " + BASE + "/?project=" + encodeURIComponent(projectId) + " in a browser to watch edits live" : "FAILED TO START (check node / port " + PORT + ")"}`,
+        `Editor server: ${up ? "RUNNING — open " + BASE + "/?project_id=" + encodeURIComponent(projectId) + " in a browser to watch edits live" : "FAILED TO START (check node / port " + PORT + ")"}`,
         `Project: ${projectId} — "${proj.name}" — ${proj.width}x${proj.height} @ ${proj.fps}fps, ${proj.clips.length} clip(s), ${dur.toFixed(2)}s, revision ${proj.revision}`,
         `Registered media: ${cap(proj.media.map((m) => `${m.id} (${m.kind}, ${m.name}${m.duration ? ", " + m.duration + "s" : ""})`), 25).join("; ") || "none"}`,
         `Files in media/: ${cap(files, 25).join(", ") || "none"}`,

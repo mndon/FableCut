@@ -35,7 +35,7 @@ live.
 
 Projects are isolated workspaces: each gets its own `project.json`, media,
 analysis cache, and exports. Use the top-bar picker, or open different
-`/?project=<id>` URLs in separate tabs, to edit several projects at once.
+`/?project_id=<id>` URLs in separate tabs, to edit several projects at once.
 
 Zero npm runtime dependencies. Run `node server.js`, or install the standalone
 CLI globally and run `tik-editvideo-cli server start`.
@@ -257,12 +257,19 @@ starts the browser editor only when a preview or export is needed:
 
 ```bash
 npm install -g tik-editvideo-cli
-tik-editvideo-cli create-project --name "My Edit" --id my-edit
-tik-editvideo-cli get-project --project my-edit --compact
-tik-editvideo-cli status --project my-edit
+tik-editvideo-cli create-project --name "My Edit"
+# Use the project_id returned by create-project in subsequent commands.
+tik-editvideo-cli get-project --project-id <returned-project_id> --compact
+tik-editvideo-cli status --project-id <returned-project_id>
 # When the final video is requested:
-tik-editvideo-cli export --project my-edit --output ./final.mp4
+tik-editvideo-cli export --project-id <returned-project_id> --output ./final.mp4
 ```
+
+`create-project --name <semantic-name>` prefixes the name with the current local
+date (`YYYY-MM-DD_<semantic-name>`), generates a UUID v4 project ID, and returns
+`{project_id, name}`. `--id` is rejected; use the returned `project_id` for subsequent commands.
+Existing projects retain their IDs and names. Project commands use
+`--project-id <id>`.
 
 `list-projects`, `create-project`, `get-project`, `patch-project`, `set-project`,
 and `import-media` operate directly on local workspaces. Explicit project IDs
@@ -278,7 +285,7 @@ use, an existing `~/.fablecut` is renamed if the new directory does not exist;
 neither directory is overwritten or merged.
 
 `status` starts a background server if necessary and returns its URL; with
-`--project <id>` it returns `projectUrl` for that project. Repeated calls reuse
+`--project-id <id>` it returns `projectUrl` for that project. Repeated calls reuse
 the same server. An incompatible service or different data directory on the
 port produces an error. `GET /api/status` exposes the server identity, PID, and
 data directory for this check. `--host` / `--port` override `HOST` / `PORT`, with
@@ -318,7 +325,7 @@ adjustments. It exports only on an explicit request, such as “导出最终视�
 Attach an existing speech transcript when importing footage:
 
 ```bash
-tik-editvideo-cli import-media --project my-edit --path /absolute/path/intro.mp4 --asr-url "https://example.com/intro-asr.json"
+tik-editvideo-cli import-media --project-id <returned-project_id> --path /absolute/path/intro.mp4 --asr-url "https://example.com/intro-asr.json"
 ```
 
 The optional `media.asrUrl` field is preserved in `project.json`, including browser
@@ -481,7 +488,7 @@ requests are still best filed as [GitHub issues](https://github.com/ronak-create
 Select **Optimized (ffmpeg + frame cache)** in Export, or run:
 
 ```bash
-tik-editvideo-cli export --project my-edit --engine optimized --output ./final.mp4
+tik-editvideo-cli export --project-id <returned-project_id> --engine optimized --output ./final.mp4
 ```
 
 `--engine fast` remains the CLI default. Optimized uses the same browser

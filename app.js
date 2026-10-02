@@ -40,7 +40,7 @@ const ZOOM_MAX = 300;
 const TIMELINE_PAD_SEC = 15; // trailing empty seconds in the scrollable content
 const TIMELINE_FIT_FILL = 0.95; // ⇧Z / Fit — clip content fills this fraction of the viewport
 const PROJECT_KEY = "fablecut-project";
-let activeProjectId = new URLSearchParams(location.search).get("project") || localStorage.getItem(PROJECT_KEY) || "default";
+let activeProjectId = new URLSearchParams(location.search).get("project_id") || localStorage.getItem(PROJECT_KEY) || "default";
 if (!/^[a-z0-9][a-z0-9_-]{0,63}$/.test(activeProjectId)) activeProjectId = "default";
 function projectApi(path) {
   return path + (path.includes("?") ? "&" : "?") + "project=" + encodeURIComponent(activeProjectId);
@@ -455,7 +455,7 @@ async function loadProjectCatalog() {
   }
   localStorage.setItem(PROJECT_KEY, activeProjectId);
   const currentUrl = new URL(location.href);
-  currentUrl.searchParams.set("project", activeProjectId);
+  currentUrl.searchParams.set("project_id", activeProjectId);
   history.replaceState(null, "", currentUrl);
   els.projectSelect.replaceChildren(...projects.map((p) => {
     const o = document.createElement("option");
@@ -466,7 +466,7 @@ async function loadProjectCatalog() {
 function openProject(id) {
   localStorage.setItem(PROJECT_KEY, id);
   const url = new URL(location.href);
-  url.searchParams.set("project", id);
+  url.searchParams.set("project_id", id);
   location.href = url.toString();
 }
 els.projectSelect.addEventListener("change", () => openProject(els.projectSelect.value));

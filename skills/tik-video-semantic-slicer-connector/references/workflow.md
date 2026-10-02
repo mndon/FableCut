@@ -47,10 +47,10 @@ python3 "$CONNECTOR_DIR/scripts/exchange.py" export \
 4. 用原生 CLI 的 revision 检查提交。下面的命令替换只读 JSON，不执行 JSON 中的内容；若超出系统参数长度限制则停止，不拆开不具备原子性的覆盖操作：
 
    ```bash
-   tik-editvideo-cli set-project --project "$PROJECT_ID" --document "$(cat "$RUN_DIR/localized-project.json")"
+   tik-editvideo-cli set-project --project-id "$PROJECT_ID" --document "$(cat "$RUN_DIR/localized-project.json")"
    ```
 
    单独检查退出码，不传 `--force`。成功后完整读回，与 localized-project.json 比较除 revision 外所有内容，确认 revision 恰好增加 1；差异未解决不能称同步成功。
-5. `tik-editvideo-cli status --project "$PROJECT_ID"` 获取客户端实际 `projectUrl`。按可用能力检查画面、声音、切点；云端/客户端未做的视听检查标为待验。默认仅交付此预览 URL；用户本次明确要成片才使用 CLI 导出 MP4，继续沿用预览合成器。
+5. `tik-editvideo-cli status --project-id "$PROJECT_ID"` 获取客户端实际 `projectUrl`。按可用能力检查画面、声音、切点；云端/客户端未做的视听检查标为待验。默认仅交付此预览 URL；用户本次明确要成片才使用 CLI 导出 MP4，继续沿用预览合成器。
 
 后续修改复用同一 session 中的 ASR/索引/审核和映射。每次派发保存新的客户端基线与唯一 run ID；服务端须针对新 request 更新结果关联。会话过期时需恢复服务端中间产物，不能拿 project.json 当作完整语义修改上下文。

@@ -92,7 +92,7 @@ test('browser switches and persists UI language without changing project data or
   t.after(() => new Promise(resolve => { proxy.closeAllConnections(); proxy.close(resolve); }));
   const chrome = spawn(browser, ['--headless=new', '--no-first-run', '--no-default-browser-check',
     ...(process.platform === 'darwin' ? ['--use-mock-keychain'] : []), '--window-size=1440,1000',
-    '--user-data-dir=' + path.join(directory, 'profile'), `http://127.0.0.1:${proxy.address().port}/?project=check`], { stdio: ['ignore', 'ignore', 'pipe'] });
+    '--user-data-dir=' + path.join(directory, 'profile'), `http://127.0.0.1:${proxy.address().port}/?project_id=check`], { stdio: ['ignore', 'ignore', 'pipe'] });
   children.push(chrome);
   let stderr = ''; chrome.stderr.on('data', data => { stderr = (stderr + data).slice(-2000); });
   let timer;

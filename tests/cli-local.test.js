@@ -7,6 +7,25 @@ const http = require("node:http");
 const { fixture } = require("./helpers/cli");
 
 function json(result) { assert.equal(result.code, 0, result.stderr); return JSON.parse(result.stdout); }
+test("create-project returns a dated semantic name and generated UUID only", async t => {
+  const { run, dataDir } = fixture(t);
+  const before = new Date();
+  const created = json(await run(["create-project", "--name", "  产品短片  "], { TZ: "Asia/Shanghai" }));
+  const after = new Date();
+  const date = now => new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
+  assert.ok([before, after].some(now => created.name === `${date(now)}_产品短片`));
+  assert.deepEqual(Object.keys(created).sort(), ["name", "project_id"]);
+  assert.match(created.project_id, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+  assert.equal(json(await run(["get-project", "--project-id", created.project_id])).name, created.name);
+  assert.ok(json(await run(["list-projects"])).some(project => project.id === created.project_id && project.name === created.name));
+  const dirs = fs.readdirSync(path.join(dataDir, "projects"));
+  for (const args of [["--id", "chosen"], ["--id=chosen"], ["--id"]]) {
+    const result = await run(["create-project", "--name", "Rejected", ...args]);
+    assert.notEqual(result.code, 0); assert.match(result.stderr, /--id is no longer supported/);
+  }
+  assert.notEqual((await run(["create-project", "--name", "  "])).code, 0);
+  assert.deepEqual(fs.readdirSync(path.join(dataDir, "projects")), dirs);
+});
 async function port(t, handler = (_req, res) => { res.end("not fablecut"); }) {
   const server = http.createServer(handler);
   await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
@@ -14,46 +33,58 @@ async function port(t, handler = (_req, res) => { res.end("not fablecut"); }) {
   return { server, port: server.address().port };
 }
 
+test("project commands require a value for --project-id", async t => {
+  const { run, dataDir } = fixture(t);
+  for (const command of ["get-project", "patch-project", "set-project", "import-media", "status", "export"]) {
+    const missing = await run([command, "--project-id"]);
+    assert.notEqual(missing.code, 0);
+    assert.match(missing.stderr, /Missing required option --project-id/);
+  }
+  assert.ok(!fs.existsSync(path.join(dataDir, "server.log")));
+});
+
 test("offline multi-project edits, concurrent patches, conflict protection and fixed home", async t => {
   const { run, home, dataDir } = fixture(t);
   const trap = await port(t, () => assert.fail("editing must not send HTTP requests"));
   const invoke = args => run(args, { PORT: String(trap.port), FABLECUT_URL: `http://127.0.0.1:${trap.port}` });
-  const projects = await Promise.all([invoke(["create-project", "--name", "A", "--id", "a"]), invoke(["create-project", "--name", "B", "--id", "b"])]);
-  assert.deepEqual(projects.map(json).map(p => p.id).sort(), ["a", "b"]);
-  const initial = json(await invoke(["get-project", "--project", "a"]));
-  const edits = Array.from({ length: 12 }, (_, i) => invoke(["patch-project", "--project", i % 2 ? "a" : "b", "--ops", JSON.stringify([{ op: "addClip", clip: { id: `c${i}`, kind: "text", track: "V1", start: i, duration: 1, props: { text: String(i) } } }])]));
+  const projects = (await Promise.all([invoke(["create-project", "--name", "A"]), invoke(["create-project", "--name", "B"])])).map(json);
+  const [a, b] = projects.map(p => p.project_id);
+  assert.notEqual(a, b);
+  const initial = json(await invoke(["get-project", "--project-id", a]));
+  const edits = Array.from({ length: 12 }, (_, i) => invoke(["patch-project", "--project-id", i % 2 ? a : b, "--ops", JSON.stringify([{ op: "addClip", clip: { id: `c${i}`, kind: "text", track: "V1", start: i, duration: 1, props: { text: String(i) } } }])]));
   (await Promise.all(edits)).forEach(json);
-  for (const [id, parity] of [["a", 1], ["b", 0]]) {
-    const doc = json(await invoke(["get-project", "--project", id]));
+  for (const [id, parity] of [[a, 1], [b, 0]]) {
+    const doc = json(await invoke(["get-project", "--project-id", id]));
     assert.equal(doc.clips.length, 6); assert.equal(doc.revision, 6);
     assert.ok(doc.clips.every(c => Number(c.id.slice(1)) % 2 === parity));
   }
-  const stale = await invoke(["set-project", "--project", "a", "--document", JSON.stringify(initial)]);
+  const stale = await invoke(["set-project", "--project-id", a, "--document", JSON.stringify(initial)]);
   assert.notEqual(stale.code, 0); assert.match(stale.stderr, /CONFLICT/);
-  assert.equal(json(await invoke(["set-project", "--project", "a", "--document", JSON.stringify(initial), "--force"])).revision, 7);
+  assert.equal(json(await invoke(["set-project", "--project-id", a, "--document", JSON.stringify(initial), "--force"])).revision, 7);
   assert.ok(!fs.existsSync(path.join(home, "ignored")));
   assert.ok(!fs.existsSync(path.join(dataDir, "server.log")));
   assert.notEqual((await run(["list-projects", "--data-dir", home])).code, 0);
   assert.deepEqual(json(await invoke(["list-projects"])), json(await run(["list-projects"])));
-  assert.notEqual((await run(["get-project", "--project", "missing"])).code, 0);
-  assert.notEqual((await run(["get-project", "--project", "../escape"])).code, 0);
+  assert.notEqual((await run(["get-project", "--project-id", "missing"])).code, 0);
+  assert.notEqual((await run(["get-project", "--project-id", "../escape"])).code, 0);
   const duplicates = (await Promise.all([run(["create-project", "--name", "same"]), run(["create-project", "--name", "same"])] )).map(json);
-  assert.equal(new Set(duplicates.map(p => p.id)).size, 2);
+  assert.equal(new Set(duplicates.map(p => p.project_id)).size, 2);
   const source = path.join(home, "素材 intro.svg"); fs.writeFileSync(source, '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"/>');
-  const imported = (await Promise.all([run(["import-media", "--project", "b", "--path", source]), run(["import-media", "--project", "b", "--path", source])])).map(json);
+  const imported = (await Promise.all([run(["import-media", "--project-id", b, "--path", source]), run(["import-media", "--project-id", b, "--path", source])])).map(json);
   assert.equal(new Set(imported.map(p => p.media.src)).size, 2);
-  assert.equal(json(await run(["get-project", "--project", "b"])).media.length, 2);
+  assert.equal(json(await run(["get-project", "--project-id", b])).media.length, 2);
 });
 
 test("status ignores legacy URL when starting and reusing the local server", async t => {
-  for (const projectArgs of [[], ["--project", "preview"]]) {
-    await t.test(projectArgs.length ? "with project" : "without project", async t => {
+  for (const withProject of [false, true]) {
+    await t.test(withProject ? "with project" : "without project", async t => {
       const { run, dataDir } = fixture(t);
       const trap = await port(t, () => assert.fail("legacy URL must not receive HTTP requests"));
       const legacyEnv = { FABLECUT_URL: `http://127.0.0.1:${trap.port}` };
       const spare = await port(t); const p = spare.port;
       await new Promise(resolve => spare.server.close(resolve));
-      if (projectArgs.length) json(await run(["create-project", "--name", "Preview", "--id", "preview"], legacyEnv));
+      const id = withProject ? json(await run(["create-project", "--name", "Preview"], legacyEnv)).project_id : undefined;
+      const projectArgs = withProject ? ["--project-id", id] : [];
       const args = ["status", ...projectArgs, "--port", String(p)];
       const result = await run(args, legacyEnv);
       const status = json(result);
@@ -63,8 +94,8 @@ test("status ignores legacy URL when starting and reusing the local server", asy
       assert.equal(status.started, true);
       assert.equal(status.dataDir, fs.realpathSync(dataDir));
       assert.equal(status.url, `http://127.0.0.1:${p}/`);
-      assert.equal(status.projectId, projectArgs.length ? "preview" : undefined);
-      assert.equal(status.projectUrl, projectArgs.length ? status.url + "?project=preview" : undefined);
+      assert.equal(status.projectId, withProject ? id : undefined);
+      assert.equal(status.projectUrl, withProject ? status.url + "?project_id=" + id : undefined);
       const reused = await run(args, legacyEnv);
       assert.equal(reused.stderr, "");
       assert.deepEqual(json(reused), { ...status, started: false });
@@ -76,8 +107,8 @@ test("status starts one persistent server, verifies workspace, and refreshes bro
   const { run, dataDir } = fixture(t);
   const spare = await port(t); const p = spare.port;
   await new Promise(resolve => spare.server.close(resolve));
-  json(await run(["create-project", "--name", "Preview", "--id", "preview"]));
-  const args = ["status", "--project", "preview", "--port", String(p)];
+  const preview = json(await run(["create-project", "--name", "Preview"])).project_id;
+  const args = ["status", "--project-id", preview, "--port", String(p)];
   const results = (await Promise.all([run(args), run(args), run(args)])).map(json);
   const status = results[0];
   t.after(async () => { try { process.kill(status.pid); } catch {} await new Promise(resolve => setTimeout(resolve, 200)); });
@@ -87,21 +118,21 @@ test("status starts one persistent server, verifies workspace, and refreshes bro
   assert.equal(json(await run(args)).started, false);
   const page = await fetch(status.projectUrl); assert.equal(page.status, 200); assert.match(await page.text(), /Tik — Video Editor/);
   const base = status.url;
-  const old = await (await fetch(base + "api/project?project=preview")).json();
+  const old = await (await fetch(base + "api/project?project=" + preview)).json();
   // Opening SSE installs the project's file watcher, as a browser tab does.
   const abort = new AbortController();
-  const events = await fetch(base + "api/events?project=preview", { signal: abort.signal });
+  const events = await fetch(base + "api/events?project=" + preview, { signal: abort.signal });
   if (events.status !== 200) { abort.abort(); assert.fail("SSE route missing"); }
   const reader = events.body.getReader();
   await reader.read();
-  json(await run(["patch-project", "--project", "preview", "--ops", '[{"op":"setProject","set":{"name":"Changed"}}]']));
+  json(await run(["patch-project", "--project-id", preview, "--ops", '[{"op":"setProject","set":{"name":"Changed"}}]']));
   const event = await Promise.race([reader.read(), new Promise((_, reject) => { const timer = setTimeout(() => reject(new Error("No SSE refresh")), 3000); timer.unref(); })]);
   assert.match(new TextDecoder().decode(event.value), /data:/); abort.abort();
-  const rejected = await fetch(base + "api/project?project=preview", { method: "PUT", body: JSON.stringify({ ...old, revision: 1 }) });
+  const rejected = await fetch(base + "api/project?project=" + preview, { method: "PUT", body: JSON.stringify({ ...old, revision: 1 }) });
   assert.equal(rejected.status, 409);
-  const latest = await (await fetch(base + "api/project?project=preview")).json();
+  const latest = await (await fetch(base + "api/project?project=" + preview)).json();
   assert.equal(latest.name, "Changed");
-  assert.notEqual((await run(["status", "--project", "missing", "--port", String(p)])).code, 0);
+  assert.notEqual((await run(["status", "--project-id", "missing", "--port", String(p)])).code, 0);
 });
 
 test("status rejects foreign services and another data directory", async t => {
@@ -128,7 +159,7 @@ test("legacy user storage migrates once and is not merged", async t => {
 test("MCP and CLI patches share the project transaction lock", async t => {
   const { spawn } = require("node:child_process");
   const { run, env, dataDir, home } = fixture(t);
-  json(await run(["create-project", "--name", "Shared", "--id", "shared"]));
+  const shared = json(await run(["create-project", "--name", "Shared"])).project_id;
   const mcp = spawn(process.execPath, [path.resolve(__dirname, "../mcp-server.js")], { cwd: home, env: { ...env, FABLECUT_DATA_DIR: dataDir }, stdio: ["pipe", "pipe", "pipe"] });
   t.after(() => mcp.kill());
   let buffer = ""; const pending = new Map(); let seq = 0;
@@ -145,11 +176,11 @@ test("MCP and CLI patches share the project transaction lock", async t => {
   });
   const changes = Array.from({ length: 10 }, (_, i) => {
     const ops = [{ op: "addClip", clip: { id: `shared${i}`, kind: "text", track: "V1", start: i, duration: 1 } }];
-    return i % 2 ? run(["patch-project", "--project", "shared", "--ops", JSON.stringify(ops)]).then(json)
-      : call("fablecut_patch_project", { projectId: "shared", ops }).then(result => { assert.ok(!result.error); assert.ok(!result.result.isError, JSON.stringify(result)); });
+    return i % 2 ? run(["patch-project", "--project-id", shared, "--ops", JSON.stringify(ops)]).then(json)
+      : call("fablecut_patch_project", { projectId: shared, ops }).then(result => { assert.ok(!result.error); assert.ok(!result.result.isError, JSON.stringify(result)); });
   });
   await Promise.all(changes);
-  const doc = json(await run(["get-project", "--project", "shared"]));
+  const doc = json(await run(["get-project", "--project-id", shared]));
   assert.equal(doc.clips.length, 10); assert.equal(doc.revision, 10);
 });
 
@@ -168,8 +199,8 @@ test("export starts the server and renders a real MP4 with the browser composito
   const browserArgs = managed ? [] : ["--browser", browser];
   const exportEnv = managed ? { CHROME_PATH: "" } : {};
   const spare = await port(t); const p = spare.port; await new Promise(resolve => spare.server.close(resolve));
-  json(await run(["create-project", "--name", "Render", "--id", "render"]));
-  json(await run(["patch-project", "--project", "render", "--ops", JSON.stringify([
+  const render = json(await run(["create-project", "--name", "Render"])).project_id;
+  json(await run(["patch-project", "--project-id", render, "--ops", JSON.stringify([
     { op: "setProject", set: { width: 160, height: 90, fps: 10, background: "#ff0000" } },
     { op: "addClip", clip: { kind: "text", track: "V1", start: 0, duration: 1, props: { text: "Test", font: "Arial", fontSize: 24 } } },
   ])]));
@@ -177,10 +208,10 @@ test("export starts the server and renders a real MP4 with the browser composito
   const output = path.join(home, "render.mp4");
   let result;
   try {
-    result = await run(["export", "--project", "render", "--output", output, "--port", String(p), ...browserArgs, "--timeout", "60"], exportEnv);
+    result = await run(["export", "--project-id", render, "--output", output, "--port", String(p), ...browserArgs, "--timeout", "60"], exportEnv);
     if (result.code === 0) {
       const optimizedOutput = path.join(home, "optimized.mp4");
-      const optimized = json(await run(["export", "--project", "render", "--engine", "optimized", "--output", optimizedOutput, "--port", String(p), ...browserArgs, "--timeout", "60"], exportEnv));
+      const optimized = json(await run(["export", "--project-id", render, "--engine", "optimized", "--output", optimizedOutput, "--port", String(p), ...browserArgs, "--timeout", "60"], exportEnv));
       assert.equal(optimized.output, optimizedOutput); assert.equal(optimized.engine, "optimized");
       assert.equal(optimized.sizeBytes, fs.statSync(optimizedOutput).size);
       assert.equal(optimized.width, 160); assert.equal(optimized.height, 90); assert.equal(optimized.fps, 10);
@@ -214,14 +245,14 @@ test("export starts the server and renders a real MP4 with the browser composito
 
 test("export rejects an unknown engine before starting the server", async t => {
   const { run, dataDir } = fixture(t);
-  const result = await run(["export", "--project", "missing", "--engine", "invalid"]);
+  const result = await run(["export", "--project-id", "missing", "--engine", "invalid"]);
   assert.notEqual(result.code, 0); assert.match(result.stderr, /--engine must be fast or optimized/);
   assert.ok(!fs.existsSync(path.join(dataDir, "server.log")));
 });
 
 test("export requires a value for an explicit browser before starting the server", async t => {
   const { run, dataDir } = fixture(t);
-  const result = await run(["export", "--project", "missing", "--browser"]);
+  const result = await run(["export", "--project-id", "missing", "--browser"]);
   assert.notEqual(result.code, 0); assert.match(result.stderr, /Missing required option --browser/);
   assert.ok(!fs.existsSync(path.join(dataDir, "server.log")));
 });

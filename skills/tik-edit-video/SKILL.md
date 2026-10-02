@@ -69,28 +69,27 @@ tik-editvideo-cli <命令> <参数>
 - `auth login`：发起网页登录授权并轮询，成功后自动保存 API Key。
 - `auth logout`：清除本地 API Key；不会撤销服务端密钥。
 - `create-project`：创建项目。
-  - `--name <名称>`：必填，项目显示名称。
-  - `--id <ID>`：可选，稳定的小写项目 ID。
-  - 返回新项目的 `id` 和 `name`。
+  - `--name <语义名称>`：必填，按本机当天日期生成 `YYYY-MM-DD_语义名称`。
+  - 返回新项目的 `project_id` 和 `name`，后续命令使用返回的 `project_id`。
 - `get-project`：读取项目时间线。
-  - `--project <ID>`：必填，目标项目 ID。
+  - `--project-id <ID>`：必填，目标项目 ID。
   - `--compact`：可选，返回低 token 的素材和片段摘要；省略时返回完整项目 JSON。
 - `patch-project`：批量修改最新项目，同一项目的并发修改按顺序执行。
-  - `--project <ID>`：必填，目标项目 ID。
+  - `--project-id <ID>`：必填，目标项目 ID。
   - `--ops '<JSON数组>'`：必填，按顺序执行的 patch 操作。
 - `set-project`：替换完整项目 JSON。
-  - `--project <ID>`：必填，目标项目 ID。
+  - `--project-id <ID>`：必填，目标项目 ID。
   - `--document '<JSON对象>'`：必填，基于最近一次完整读取修改后的项目文档。
   - `--force`：可选，仅在用户明确要求丢弃并发修改时使用。
 - `import-media`：导入本地素材并注册到项目。
-  - `--project <ID>`：必填，目标项目 ID。
+  - `--project-id <ID>`：必填，目标项目 ID。
   - `--path <绝对路径>`：必填，本地视频、音频、图片或 SVG 文件。
   - `--asr-url <URL>`：可选，原始素材完整 ASR JSON 的 HTTP(S) 地址，保存为 `media.asrUrl`，随工程交付供其他设备复用。
   - 返回可供片段引用的 `media` 对象。
 - `status`：检查本地 HTTP 服务，未启动时自动启动。
-  - `--project <ID>`：可选，指定时返回该项目的 `projectUrl`，用于交付预览。
+  - `--project-id <ID>`：可选，指定时返回该项目的 `projectUrl`，用于交付预览。
 - `export`：自动启动所需服务，用无头 Chrome/Chromium 调用与预览相同的浏览器合成器，导出最终 MP4。
-  - `--project <ID>`：必填，目标项目 ID。
+  - `--project-id <ID>`：必填，目标项目 ID。
   - `--output <路径>`：可选，本地输出文件；默认使用项目名。
   - `--name <名称>`：可选，服务端导出名称。
   - `--force`：可选，覆盖已存在的本地输出文件。
@@ -117,8 +116,8 @@ tik-editvideo-cli <命令> <参数>
 - 用户要求新建项目或没有可用项目时，运行 `create-project`，记录返回的项目 ID。不要猜测已有项目 ID。
 
 ```bash
-tik-editvideo-cli create-project --name "产品短片" --id product-reel
-tik-editvideo-cli get-project --project product-reel --compact
+tik-editvideo-cli create-project --name "产品短片"
+tik-editvideo-cli get-project --project-id <project_id> --compact
 ```
 
 ### 2. 导入素材并完成剪辑
@@ -128,13 +127,13 @@ tik-editvideo-cli get-project --project product-reel --compact
 已有 ASR URL 时随导入传入 `--asr-url`。需要转写内容时，先读取完整工程中的对应 `media.asrUrl` 并下载复用；紧凑摘要的 `asr=yes` 仅提示结果存在。链接内容包含 `rich_result` 和 `channel`，时间戳基于原始素材、单位毫秒。下载失败时报告，不自动重复转写。
 
 ```bash
-tik-editvideo-cli import-media --project product-reel --path /absolute/path/intro.mp4 --asr-url "https://example.com/intro-asr.json"
+tik-editvideo-cli import-media --project-id <project_id> --path /absolute/path/intro.mp4 --asr-url "https://example.com/intro-asr.json"
 ```
 
 根据任务读取必要的剪辑参考，规划轨道、入点、时长、效果和音频。优先用一次 `patch-project` 提交相关修改，避免中间态：
 
 ```bash
-tik-editvideo-cli patch-project --project product-reel --ops '[
+tik-editvideo-cli patch-project --project-id <project_id> --ops '[
   {"op":"addClip","clip":{"kind":"video","mediaId":"m_demo","track":"V1","start":0,"in":0,"duration":5,"props":{"fit":"cover"}}},
   {"op":"addClip","clip":{"kind":"text","mediaId":null,"track":"V2","start":0.4,"in":0,"duration":2.5,"props":{"text":"现在开始","font":"Anton","fontSize":96,"textAnim":"word-pop"}}}
 ]'
@@ -147,7 +146,7 @@ tik-editvideo-cli patch-project --project product-reel --ops '[
 再次运行 `get-project --compact`，核对总时长、轨道、素材引用和片段边界；关键帧和转场需读取完整项目核对。验证后运行：
 
 ```bash
-tik-editvideo-cli status --project product-reel
+tik-editvideo-cli status --project-id <project_id>
 ```
 
 使用返回的 `projectUrl` 交付预览，默认不直接导出。简述剪辑结果，并提示：“可以继续提出调整，或回复‘导出最终视频’进行导出。”不展示与用户无关的内部细节。
@@ -155,7 +154,7 @@ tik-editvideo-cli status --project product-reel
 用户回复“导出最终视频”或已明确要求最终文件时，运行：
 
 ```bash
-tik-editvideo-cli export --project product-reel --output ./product-reel.mp4
+tik-editvideo-cli export --project-id <project_id> --output ./product-reel.mp4
 ```
 
 ## 剪辑原则
