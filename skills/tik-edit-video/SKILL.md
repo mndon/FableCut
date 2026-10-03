@@ -69,8 +69,8 @@ tik-editvideo-cli <命令> <参数>
 - `auth login`：发起网页登录授权并轮询，成功后自动保存 API Key。
 - `auth logout`：清除本地 API Key；不会撤销服务端密钥。
 - `create-project`：创建项目。
-  - `--name <语义名称>`：必填，按本机当天日期生成 `YYYY-MM-DD_语义名称`。
-  - 返回新项目的 `project_id` 和 `name`，后续命令使用返回的 `project_id`。
+  - `--name <语义名称>`：必填，按本机当天日期生成 `YYYYMMDD_语义名称`。
+  - 返回新项目的 `project_id`（32 位小写十六进制字符串，无横杠）和 `name`，后续命令使用返回的 `project_id`。
 - `get-project`：读取项目时间线。
   - `--project-id <ID>`：必填，目标项目 ID。
   - `--compact`：可选，返回低 token 的素材和片段摘要；省略时返回完整项目 JSON。

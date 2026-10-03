@@ -337,8 +337,8 @@ Usage:
 
 Editing works without a server. status starts a background preview server if needed;
 export also starts it automatically. server start runs in the foreground.
-create-project names projects YYYY-MM-DD_<semantic-name> using the local date,
-generates a UUID v4, and returns {project_id, name}. --id is unsupported.
+create-project names projects YYYYMMDD_<semantic-name> using the local date,
+generates a UUID v4 without hyphens (32 lowercase hex characters), and returns {project_id, name}. --id is unsupported.
 Storage is fixed at .tik-editvideo-cli inside the OS user home directory.
 HOST / PORT configure the local server (default 127.0.0.1:7777).
 --browser / CHROME_PATH selects Chrome/Chromium for export. Otherwise a cached or
@@ -399,8 +399,8 @@ async function main(argv = process.argv.slice(2)) {
     const name = requireOption(options, "name").trim();
     if (!name) throw new CliError("--name must contain a semantic project name");
     const now = new Date();
-    const date = [now.getFullYear(), String(now.getMonth() + 1).padStart(2, "0"), String(now.getDate()).padStart(2, "0")].join("-");
-    const created = store.create(`${date}_${name}`, require("crypto").randomUUID());
+    const date = [now.getFullYear(), String(now.getMonth() + 1).padStart(2, "0"), String(now.getDate()).padStart(2, "0")].join("");
+    const created = store.create(`${date}_${name}`, require("crypto").randomUUID().replace(/-/g, ""));
     print({ project_id: created.id, name: created.name });
   }
   else if (command === "get-project") {

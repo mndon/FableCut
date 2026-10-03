@@ -266,7 +266,8 @@ tik-editvideo-cli export --project-id <returned-project_id> --output ./final.mp4
 ```
 
 `create-project --name <semantic-name>` prefixes the name with the current local
-date (`YYYY-MM-DD_<semantic-name>`), generates a UUID v4 project ID, and returns
+date (`YYYYMMDD_<semantic-name>`), generates a UUID v4 project ID
+without hyphens (32 lowercase hex characters), and returns
 `{project_id, name}`. `--id` is rejected; use the returned `project_id` for subsequent commands.
 Existing projects retain their IDs and names. Project commands use
 `--project-id <id>`.

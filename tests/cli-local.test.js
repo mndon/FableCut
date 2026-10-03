@@ -7,15 +7,15 @@ const http = require("node:http");
 const { fixture } = require("./helpers/cli");
 
 function json(result) { assert.equal(result.code, 0, result.stderr); return JSON.parse(result.stdout); }
-test("create-project returns a dated semantic name and generated UUID only", async t => {
+test("create-project returns a dated semantic name and generated UUID without hyphens", async t => {
   const { run, dataDir } = fixture(t);
   const before = new Date();
   const created = json(await run(["create-project", "--name", "  产品短片  "], { TZ: "Asia/Shanghai" }));
   const after = new Date();
-  const date = now => new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
+  const date = now => new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit" }).format(now).replace(/-/g, "");
   assert.ok([before, after].some(now => created.name === `${date(now)}_产品短片`));
   assert.deepEqual(Object.keys(created).sort(), ["name", "project_id"]);
-  assert.match(created.project_id, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+  assert.match(created.project_id, /^[0-9a-f]{12}4[0-9a-f]{3}[89ab][0-9a-f]{15}$/);
   assert.equal(json(await run(["get-project", "--project-id", created.project_id])).name, created.name);
   assert.ok(json(await run(["list-projects"])).some(project => project.id === created.project_id && project.name === created.name));
   const dirs = fs.readdirSync(path.join(dataDir, "projects"));

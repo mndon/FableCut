@@ -22,8 +22,8 @@ tik-editvideo-cli status --project-id <返回的project_id>
 tik-editvideo-cli export --project-id <返回的project_id> --output ./final.mp4
 ```
 
-`create-project --name <语义名称>` 按本机当天日期生成 `YYYY-MM-DD_语义名称`，
-自动生成 UUID v4 项目 ID，返回 `{project_id, name}`。不支持 `--id`，后续命令使用返回的
+`create-project --name <语义名称>` 按本机当天日期生成 `YYYYMMDD_语义名称`，
+自动生成无横杠的 UUID v4 项目 ID（32 位小写十六进制字符串），返回 `{project_id, name}`。不支持 `--id`，后续命令使用返回的
 `project_id`；已有项目的名称和 ID 保持不变。
 项目参数为 `--project-id <ID>`。
 
