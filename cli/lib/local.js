@@ -6,13 +6,13 @@ const http = require("http");
 const { spawn } = require("child_process");
 
 function initialize(runtime) {
-  const dataDir = path.join(os.homedir(), ".tik-editvideo-cli");
+  const dataDir = path.join(os.homedir(), ".tik-video-editor-cli");
   const legacy = path.join(os.homedir(), ".fablecut");
   // The CLI owns its storage location; inherited configuration cannot redirect it.
   process.env.FABLECUT_DATA_DIR = dataDir;
   const paths = require(path.join(runtime, "paths.js"));
   const store = require(path.join(runtime, "project-store.js"));
-  store.withLock(path.join(os.homedir(), ".tik-editvideo-cli-initialize.lock"), () => {
+  store.withLock(path.join(os.homedir(), ".tik-video-editor-cli-initialize.lock"), () => {
     if (!fs.existsSync(dataDir) && fs.existsSync(legacy)) fs.renameSync(legacy, dataDir);
     paths.ensureDirs();
   });
@@ -62,7 +62,7 @@ async function ensureServer(local, options) {
       const fd = fs.openSync(log, "a");
       let child, launchError;
       try {
-        child = spawn(process.execPath, [path.join(__dirname, "../bin/tik-editvideo-cli.js"), "server", "start", "--host", host, "--port", String(port)], {
+        child = spawn(process.execPath, [path.join(__dirname, "../bin/tik-video-editor-cli.js"), "server", "start", "--host", host, "--port", String(port)], {
           cwd: local.runtime, detached: true, windowsHide: true,
           stdio: ["ignore", fd, fd], env: { ...process.env },
         });

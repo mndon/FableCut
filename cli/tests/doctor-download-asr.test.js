@@ -25,7 +25,7 @@ async function server(t, handler) {
 }
 function cli(args, home, extraEnv = {}) {
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [path.resolve(__dirname, "../bin/tik-editvideo-cli.js"), ...args], {
+    const child = spawn(process.execPath, [path.resolve(__dirname, "../bin/tik-video-editor-cli.js"), ...args], {
       cwd: home, env: { ...process.env, HOME: home, USERPROFILE: home, ...extraEnv },
     });
     let stdout = "", stderr = "";
@@ -72,7 +72,7 @@ test("download preserves binary bytes, follows redirects and never attaches auth
   const command = await cli(["download", "--url", base + "/binary", "--output", "relative/file.bin"], root);
   assert.equal(command.code, 0, command.stderr);
   assert.equal(JSON.parse(command.stdout).path, path.join(root, "relative/file.bin"));
-  assert.equal(fs.existsSync(path.join(root, ".tik-editvideo-cli")), false);
+  assert.equal(fs.existsSync(path.join(root, ".tik-video-editor-cli")), false);
 });
 
 test("generic download accepts non-ASR content and cleans HTTP, redirect, timeout and disconnected failures", async t => {
@@ -330,5 +330,5 @@ test("CLI ASR uses persisted credentials, runs the full gateway protocol and sav
   assert.equal(fs.readFileSync(output, "utf8"), BODY);
   assert.deepEqual(requests, ["/open/api/v2/toolExtract", "/open/api/v2/toolExtract/12/applyAudioUploadAddresses",
     "/upload", "/open/api/v2/toolExtract/12/audioTask", "/open/api/v2/toolExtract/12", "/result"]);
-  assert.deepEqual(fs.readdirSync(path.join(root, ".tik-editvideo-cli")), ["auth.json"]);
+  assert.deepEqual(fs.readdirSync(path.join(root, ".tik-video-editor-cli")), ["auth.json"]);
 });

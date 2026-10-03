@@ -1,0 +1,4 @@
+interface:
+  display_name: "服装带货直播切片剪辑师（云端协作）"
+  short_description: "接收服装带货直播素材，协助选商品、卖点与钩子，协调云端剪辑并展示本地成片预览"
+  default_prompt: "使用 $tik-apparel-livestream-editor-connector 作为服装带货直播切片剪辑师，帮我把这段素材剪成一条带货短片，挑选有吸引力的开头、保留完整卖点，并展示成片预览。"

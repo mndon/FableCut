@@ -133,7 +133,7 @@ async function verifyBrowser(file) {
 }
 
 async function ensureBrowser(explicit, {
-  cacheRoot = path.join(os.homedir(), ".tik-editvideo-cli", "browsers"),
+  cacheRoot = path.join(os.homedir(), ".tik-video-editor-cli", "browsers"),
   env = process.env, platform = process.platform, arch = process.arch,
   candidates = systemCandidates(), download = downloadArchive, verify = verifyBrowser,
   log = message => process.stderr.write(message + "\n"),

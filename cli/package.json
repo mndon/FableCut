@@ -1,11 +1,11 @@
 {
-  "name": "tik-editvideo-cli",
+  "name": "tik-video-editor-cli",
   "version": "1.7.0",
   "description": "Local video editing, on-demand preview, and headless",
   "license": "MIT",
   "type": "commonjs",
   "bin": {
-    "tik-editvideo-cli": "bin/tik-editvideo-cli.js"
+    "tik-video-editor-cli": "bin/tik-video-editor-cli.js"
   },
   "files": [
     "bin/",

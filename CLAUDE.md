@@ -110,23 +110,30 @@ Existing v1 root-level `project.json`, `media/`, `exports/`, and `analysis/` are
 migrated once to `projects/default/`. **Don't assume a project file is beside
 `mcp-server.js`** — call `fablecut_status`, which reports the real workspace.
 
-## Cloud semantic slicing connector
+## Apparel livestream slicing editor
 
-`skills/tik-video-semantic-slicer-connector/` prepares and aligns client-side
-sources, runs `tik-editvideo-cli asr` / `download` for transcription and reuse,
-and coordinates `tik-edit-video` for editing.
-The client installs the connector and `tik-edit-video`; the server installs
-`tik-video-semantic-slicer` and `tik-edit-video`. The connector bundles only
-preparation and transport helpers. Its user-facing role is a video slicing
-editor, with transport details in supporting references. It hands a
+`skills/tik-apparel-livestream-editor-connector/` prepares and aligns client-side
+sources, runs `tik-video-editor-cli asr` / `download` for transcription and reuse,
+and coordinates `tik-video-editor` for editing.
+The client installs the connector and `tik-video-editor`; the server installs
+`tik-apparel-livestream-editor` and `tik-video-editor`. The connector bundles only
+preparation and transport helpers. Both skills are positioned as apparel sales
+livestream slicing editors (服装带货直播切片剪辑师), selecting product selling
+points, on-body demonstrations, styling value, and opening hooks from apparel
+livestreams and related product pitches. The connector handles client interaction
+and cloud coordination, with transport details in supporting references. It hands a
 native FableCut `project.json` plus a separate `request.json` to
-an Aliyun Managed Agent running `tik-video-semantic-slicer`, and receives a
+an Aliyun Managed Agent running `tik-apparel-livestream-editor`, and receives a
 native project plus `result.json`. This is not the Managed Agent IaC project
 format. No fields are added to the FableCut schema.
 
+Skill IDs and directories use `tik-apparel-livestream-editor` and
+`tik-apparel-livestream-editor-connector`. The exchange protocol identifier remains
+`tik-video-semantic-slicer-connector/v1` for compatibility with existing handoffs.
+
 The connector's standard-library Python helpers export portable media references,
 bind responses to a run and input hash, and restore original client media by ID.
-They stage offline documents only. Apply through `tik-editvideo-cli set-project`
+They stage offline documents only. Apply through `tik-video-editor-cli set-project`
 with the unchanged client revision; reject changes since dispatch instead of
 overwriting concurrent edits. The client obtains the actual local preview URL
 from `status`. Preview and optional MP4 export retain the existing compositor.
@@ -141,11 +148,11 @@ node server.js        # → http://localhost:7777
 Or install the standalone CLI (Node 18+, no npm runtime dependencies):
 
 ```bash
-npm install -g tik-editvideo-cli
-tik-editvideo-cli create-project --name "My Edit"
+npm install -g tik-video-editor-cli
+tik-video-editor-cli create-project --name "My Edit"
 # Use the project_id returned by create-project in subsequent commands.
-tik-editvideo-cli get-project --project-id <returned-project_id> --compact
-tik-editvideo-cli status --project-id <returned-project_id>
+tik-video-editor-cli get-project --project-id <returned-project_id> --compact
+tik-video-editor-cli status --project-id <returned-project_id>
 ```
 
 `create-project --name <semantic-name>` prefixes the name with the current local
@@ -164,9 +171,9 @@ modify the latest document under the lock. CLI `set-project` takes the revision
 from the last full read, rejects stale documents, and increments it on save;
 `--force` deliberately replaces concurrent changes.
 
-CLI storage is fixed at `path.join(os.homedir(), ".tik-editvideo-cli")` on
-Windows, macOS, and Linux (typically `C:\Users\<user>\.tik-editvideo-cli`,
-`/Users/<user>/.tik-editvideo-cli`, or `/home/<user>/.tik-editvideo-cli`).
+CLI storage is fixed at `path.join(os.homedir(), ".tik-video-editor-cli")` on
+Windows, macOS, and Linux (typically `C:\Users\<user>\.tik-video-editor-cli`,
+`/Users/<user>/.tik-video-editor-cli`, or `/home/<user>/.tik-video-editor-cli`).
 `--data-dir` is unsupported; inherited `FABLECUT_DATA_DIR` does not affect the
 CLI or its server. Standalone `node server.js` and MCP retain their directory
 configuration described above. On first use, an existing `~/.fablecut` is renamed
@@ -190,10 +197,10 @@ otherwise those fields may remain absent until the browser probes the file.
 `media.asrUrl`; `addMedia` accepts the same optional field. Compact summaries mark
 these media with `asr=yes`; read the full project for URLs.
 
-The `tik-edit-video` skill verifies the edit, runs `status --project-id <id>`, and
+The `tik-video-editor` skill verifies the edit, runs `status --project-id <id>`, and
 hands over the returned preview link. It exports only when explicitly requested,
 including a reply of “导出最终视频”; otherwise it invites further adjustments.
-Use `tik-editvideo-cli --help` for command arguments.
+Use `tik-video-editor-cli --help` for command arguments.
 
 Files: `index.html` + `style.css` + `app.js` (editor UI), `server.js` (API + hosting),
 `projects/<id>/project.json` (timeline), `projects/<id>/media/` (project footage),
@@ -695,7 +702,7 @@ Realtime export, and `/api/export/begin` all use this value; pass the same
 ## Export
 
 Export can be started in the UI (Export button → dialog) or headlessly with
-`tik-editvideo-cli export --project-id <id> --output <file.mp4>`. Three engines: **Fast** (browser
+`tik-video-editor-cli export --project-id <id> --output <file.mp4>`. Three engines: **Fast** (browser
 renders each frame with the normal compositor — including SVG frames, keys and
 AI masks — streams JPEG frames + an offline WAV mix to the server, ffmpeg
 encodes a CRF-18 faststart MP4 into the project's `exports/`) and **Realtime**
@@ -705,7 +712,7 @@ managed cache, then an existing system Chrome/Chromium. If none is available,
 the CLI automatically downloads pinned Chrome for Testing 153.0.8010.52 from
 the npmmirror mirror (`https://cdn.npmmirror.com/binaries/chrome-for-testing`)
 over HTTPS, extracts and checks it, and caches it under
-`~/.tik-editvideo-cli/browsers/<version>/<platform>/`. The first download requires
+`~/.tik-video-editor-cli/browsers/<version>/<platform>/`. The first download requires
 network access; subsequent exports reuse the installation without downloading.
 Download/extraction progress goes to stderr, preserving JSON results on stdout.
 Successful CLI exports return `{ok, engine, browser, output, sizeBytes, elapsedSeconds,
@@ -737,7 +744,7 @@ the timeline in ffmpeg.
 
 The third UI engine, **Optimized (ffmpeg + frame cache)**, keeps Fast and
 Realtime unchanged, including their default selection. CLI users select it with
-`tik-editvideo-cli export --project-id <id> --engine optimized --output final.mp4`;
+`tik-video-editor-cli export --project-id <id> --engine optimized --output final.mp4`;
 `--engine fast` remains the default. Optimized additionally requires ffprobe.
 It uses the same compositor, SVG/AI preparation, offline audio mix, JPEG quality
 0.95, x264 CRF 18 and BT.709 output as Fast. Hardware encoding and parallel
@@ -826,12 +833,12 @@ effects and cache state; the name does not guarantee faster exports.
 
 ## CLI OpenAPI authentication
 
-Run `tik-editvideo-cli auth status` to validate the saved API Key and return
+Run `tik-video-editor-cli auth status` to validate the saved API Key and return
 `logged_in` plus `user_info`. A missing or rejected key returns
 `{"logged_in": false}` with exit code 0. Network and service failures are errors.
-Use `tik-editvideo-cli auth login` when signed out: it prints and opens a browser
+Use `tik-video-editor-cli auth login` when signed out: it prints and opens a browser
 login URL, polls until authorization or expiry, validates the returned key, and
-saves it to `~/.tik-editvideo-cli/auth.json` with mode `0600`. Add `--no-browser`
+saves it to `~/.tik-video-editor-cli/auth.json` with mode `0600`. Add `--no-browser`
 on headless systems. Credentials are never printed. The default OpenAPI origin
 is `https://app.tttci.com`; `--api-url <origin>` selects another environment and
 credentials are bound to that origin. The selected origin is saved on login.
@@ -846,7 +853,7 @@ command still controls local preview. Local editing remains available offline.
 
 ## CLI dependency checks, ASR and downloads
 
-`tik-editvideo-cli doctor` checks the running Node version (18 or newer), ffmpeg
+`tik-video-editor-cli doctor` checks the running Node version (18 or newer), ffmpeg
 and ffprobe on PATH. It prints `{ok, checks}`, with an `ok` flag and version or
 error for each dependency, and exits with code 0 only when all checks pass.
 It does not install dependencies, access the network or start the editor.
@@ -855,11 +862,11 @@ subsequent skills reuse successful checks. Client and cloud environments check
 separately. A signed-out auth status still exits with code 0: inspect `logged_in`.
 
 ```bash
-tik-editvideo-cli doctor
-tik-editvideo-cli auth status
-tik-editvideo-cli asr --path /absolute/path/source.mp4
-tik-editvideo-cli asr --path /absolute/path/source.mp4 --output ./audio.json
-tik-editvideo-cli download --url "https://example.com/file" --output ./file
+tik-video-editor-cli doctor
+tik-video-editor-cli auth status
+tik-video-editor-cli asr --path /absolute/path/source.mp4
+tik-video-editor-cli asr --path /absolute/path/source.mp4 --output ./audio.json
+tik-video-editor-cli download --url "https://example.com/file" --output ./file
 ```
 
 ASR uses the saved CLI login key (not `TIK_API_KEY`) and the existing gateway at
@@ -884,5 +891,5 @@ directories, resolve relative output paths against the current directory, refuse
 to overwrite existing files and clean up incomplete downloads. Successful download
 returns `{"path":"<absolute path>"}`. These commands need no project, browser or
 local editor server. The semantic slicer and connector skills run these ASR and
-download commands directly; `tik-edit-video` lists the ASR command and handles
+download commands directly; `tik-video-editor` lists the ASR command and handles
 editor operations. The separate ASR skill has been removed.

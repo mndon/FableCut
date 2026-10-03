@@ -55,7 +55,7 @@ function parseJSON(value, label, kind) {
 function runtimeDir() {
   const packaged = path.resolve(__dirname, "../runtime");
   if (fs.existsSync(path.join(packaged, "server.js"))) return packaged;
-  throw new CliError("FableCut runtime is missing; run 'npm run sync-runtime' in the CLI source directory or reinstall tik-editvideo-cli");
+  throw new CliError("FableCut runtime is missing; run 'npm run sync-runtime' in the CLI source directory or reinstall tik-video-editor-cli");
 }
 
 // HTTP is used only to drive the local browser export and retrieve its output.
@@ -78,7 +78,7 @@ class ExportClient {
 
   request(method, apiPath, { query, response = "json" } = {}) {
     const url = this.target(apiPath, query);
-    const headers = { Accept: response === "json" ? "application/json" : "*/*", "User-Agent": "tik-editvideo-cli/1" };
+    const headers = { Accept: response === "json" ? "application/json" : "*/*", "User-Agent": "tik-video-editor-cli/1" };
     return new Promise((resolve, reject) => {
       const req = http.request(url, { method, headers, timeout: 120000 }, (res) => {
         if (response === "stream" && res.statusCode >= 200 && res.statusCode < 300) { resolve(res); return; }
@@ -104,7 +104,7 @@ class ExportClient {
       req.on("error", (error) => {
         if (error instanceof CliError) { reject(error); return; }
         const hint = url.hostname === "127.0.0.1" || url.hostname === "localhost"
-          ? " Is the server running? Start it with: tik-editvideo-cli status"
+          ? " Is the server running? Start it with: tik-video-editor-cli status"
           : "";
         reject(new CliError(`Request to ${url.origin} failed: ${networkErrorMessage(error)}.${hint}`));
       });
@@ -276,7 +276,7 @@ async function exportProject(client, options, started) {
   if (fs.existsSync(output) && !options.force) throw new CliError(`Output already exists: ${output} (pass --force to replace it)`);
   const browserPath = await require("./browser").ensureBrowser(options.browser);
   const requestId = require("crypto").randomBytes(16).toString("hex");
-  const profile = fs.mkdtempSync(path.join(os.tmpdir(), "tik-editvideo-cli-chrome-"));
+  const profile = fs.mkdtempSync(path.join(os.tmpdir(), "tik-video-editor-cli-chrome-"));
   const url = new URL(client.base.href);
   url.searchParams.set("project_id", projectId);
   url.searchParams.set("cliExport", requestId);
@@ -317,29 +317,29 @@ async function exportProject(client, options, started) {
 }
 
 function printHelp() {
-  console.log(`tik-editvideo-cli - local editing, preview, and export
+  console.log(`tik-video-editor-cli - local editing, preview, and export
 
 Usage:
-  tik-editvideo-cli doctor
-  tik-editvideo-cli download --url <http(s)-url> --output <path>
-  tik-editvideo-cli asr --path <absolute-audio-or-video-path> [--output <json-path>] [--api-url <origin>]
-  tik-editvideo-cli auth status|login|logout [--api-url <origin>] [--no-browser]
-  tik-editvideo-cli list-projects
-  tik-editvideo-cli create-project --name <semantic-name>
-  tik-editvideo-cli get-project --project-id <id> [--compact]
-  tik-editvideo-cli patch-project --project-id <id> --ops '<JSON array>'
-  tik-editvideo-cli set-project --project-id <id> --document '<JSON object>' [--force]
-  tik-editvideo-cli import-media --project-id <id> --path <file> [--asr-url <url>]
-  tik-editvideo-cli status [--project-id <id>] [--host <host>] [--port <port>]
-  tik-editvideo-cli server start [--host <host>] [--port <port>]
-  tik-editvideo-cli export --project-id <id> [--name <name>] [--output <mp4>] [--engine fast|optimized] [--force]
+  tik-video-editor-cli doctor
+  tik-video-editor-cli download --url <http(s)-url> --output <path>
+  tik-video-editor-cli asr --path <absolute-audio-or-video-path> [--output <json-path>] [--api-url <origin>]
+  tik-video-editor-cli auth status|login|logout [--api-url <origin>] [--no-browser]
+  tik-video-editor-cli list-projects
+  tik-video-editor-cli create-project --name <semantic-name>
+  tik-video-editor-cli get-project --project-id <id> [--compact]
+  tik-video-editor-cli patch-project --project-id <id> --ops '<JSON array>'
+  tik-video-editor-cli set-project --project-id <id> --document '<JSON object>' [--force]
+  tik-video-editor-cli import-media --project-id <id> --path <file> [--asr-url <url>]
+  tik-video-editor-cli status [--project-id <id>] [--host <host>] [--port <port>]
+  tik-video-editor-cli server start [--host <host>] [--port <port>]
+  tik-video-editor-cli export --project-id <id> [--name <name>] [--output <mp4>] [--engine fast|optimized] [--force]
                      [--browser <path>] [--timeout <seconds>] [--host <host>] [--port <port>]
 
 Editing works without a server. status starts a background preview server if needed;
 export also starts it automatically. server start runs in the foreground.
 create-project names projects YYYYMMDD_<semantic-name> using the local date,
 generates a UUID v4 without hyphens (32 lowercase hex characters), and returns {project_id, name}. --id is unsupported.
-Storage is fixed at .tik-editvideo-cli inside the OS user home directory.
+Storage is fixed at .tik-video-editor-cli inside the OS user home directory.
 HOST / PORT configure the local server (default 127.0.0.1:7777).
 --browser / CHROME_PATH selects Chrome/Chromium for export. Otherwise a cached or
 system browser is used; if missing, Chrome for Testing is downloaded automatically.
@@ -376,10 +376,10 @@ async function main(argv = process.argv.slice(2)) {
     console.log(JSON.stringify(await require("./auth").runAuth(positionals[1], options), null, 2));
     return;
   }
-  if (options["data-dir"] !== undefined) throw new CliError("--data-dir is no longer supported; storage is fixed at ~/.tik-editvideo-cli");
+  if (options["data-dir"] !== undefined) throw new CliError("--data-dir is no longer supported; storage is fixed at ~/.tik-video-editor-cli");
   const commands = ["server", "status", "list-projects", "create-project", "get-project", "patch-project", "set-project", "import-media", "export"];
-  if (!commands.includes(command)) throw new CliError("Unknown command: " + command + " (run tik-editvideo-cli --help)");
-  if (command === "server" && positionals[1] !== "start") throw new CliError("Use: tik-editvideo-cli server start");
+  if (!commands.includes(command)) throw new CliError("Unknown command: " + command + " (run tik-video-editor-cli --help)");
+  if (command === "server" && positionals[1] !== "start") throw new CliError("Use: tik-video-editor-cli server start");
   if (command === "create-project" && options.id !== undefined)
     throw new CliError("--id is no longer supported; create-project generates a UUID and returns it as project_id");
   const { initialize, ensureServer, connection } = require("./local");

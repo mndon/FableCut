@@ -3,7 +3,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { spawn } = require("node:child_process");
-const cli = path.resolve(__dirname, "../../cli/bin/tik-editvideo-cli.js");
+const cli = path.resolve(__dirname, "../../cli/bin/tik-video-editor-cli.js");
 function fixture(t) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "tik 测试 home-"));
   t.after(() => fs.rmSync(home, { recursive: true, force: true }));
@@ -16,6 +16,6 @@ function fixture(t) {
     child.on("error", reject);
     child.on("close", code => resolve({ code, stdout, stderr }));
   });
-  return { home, env, run, dataDir: path.join(home, ".tik-editvideo-cli") };
+  return { home, env, run, dataDir: path.join(home, ".tik-video-editor-cli") };
 }
 module.exports = { fixture };

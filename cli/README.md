@@ -1,4 +1,4 @@
-# tik-editvideo-cli
+# tik-video-editor-cli
 
 FableCut 的零 npm 运行时依赖命令行工具，支持直接操作本地项目、按需启动预览服务以及
 通过无头浏览器导出最终视频。
@@ -14,12 +14,12 @@ FableCut 的零 npm 运行时依赖命令行工具，支持直接操作本地项
 ## 安装与使用
 
 ```bash
-npm install -g tik-editvideo-cli
-tik-editvideo-cli create-project --name "产品短片"
-tik-editvideo-cli get-project --project-id <返回的project_id> --compact
-tik-editvideo-cli status --project-id <返回的project_id>
+npm install -g tik-video-editor-cli
+tik-video-editor-cli create-project --name "产品短片"
+tik-video-editor-cli get-project --project-id <返回的project_id> --compact
+tik-video-editor-cli status --project-id <返回的project_id>
 # 用户明确要求导出后：
-tik-editvideo-cli export --project-id <返回的project_id> --output ./final.mp4
+tik-video-editor-cli export --project-id <返回的project_id> --output ./final.mp4
 ```
 
 `create-project --name <语义名称>` 按本机当天日期生成 `YYYYMMDD_语义名称`，
@@ -28,19 +28,19 @@ tik-editvideo-cli export --project-id <返回的project_id> --output ./final.mp4
 项目参数为 `--project-id <ID>`。
 
 CLI 将项目、素材、分析结果、导出文件和共享素材库固定保存到
-`~/.tik-editvideo-cli/`：
+`~/.tik-video-editor-cli/`：
 
 ```text
-~/.tik-editvideo-cli/projects/<id>/project.json
-~/.tik-editvideo-cli/projects/<id>/media/
-~/.tik-editvideo-cli/projects/<id>/exports/
-~/.tik-editvideo-cli/projects/<id>/analysis/
-~/.tik-editvideo-cli/library/
+~/.tik-video-editor-cli/projects/<id>/project.json
+~/.tik-video-editor-cli/projects/<id>/media/
+~/.tik-video-editor-cli/projects/<id>/exports/
+~/.tik-video-editor-cli/projects/<id>/analysis/
+~/.tik-video-editor-cli/library/
 ```
 
-目录通过 `path.join(os.homedir(), ".tik-editvideo-cli")` 解析，支持 Windows、macOS
-和 Linux。典型路径分别为 `C:\Users\<用户>\.tik-editvideo-cli`、
-`/Users/<用户>/.tik-editvideo-cli`、`/home/<用户>/.tik-editvideo-cli`。
+目录通过 `path.join(os.homedir(), ".tik-video-editor-cli")` 解析，支持 Windows、macOS
+和 Linux。典型路径分别为 `C:\Users\<用户>\.tik-video-editor-cli`、
+`/Users/<用户>/.tik-video-editor-cli`、`/home/<用户>/.tik-video-editor-cli`。
 `--data-dir` 不再支持，外部 `FABLECUT_DATA_DIR` 不影响 CLI。CLI 包含自己的
 Web 编辑器运行时，不依赖源码仓库；独立服务和 MCP 原有目录配置保持兼容。
 
@@ -58,7 +58,7 @@ Web 编辑器运行时，不依赖源码仓库；独立服务和 MCP 原有目�
 均不可用时，CLI 默认从国内 npmmirror 镜像
 `https://cdn.npmmirror.com/binaries/chrome-for-testing`
 下载固定版本 Chrome for Testing 153.0.8010.52，
-解压、校验并验证启动后，缓存到 `~/.tik-editvideo-cli/browsers/<version>/<platform>/`。
+解压、校验并验证启动后，缓存到 `~/.tik-video-editor-cli/browsers/<version>/<platform>/`。
 后续导出直接复用；下载进度写入 stderr，stdout 保持 JSON。显式路径无效时直接报错。
 支持 macOS / Linux 的 x64、arm64 和 Windows 的 x64、ia32；其他平台可通过
 `--browser` 指定兼容浏览器。下载、解压仅用 Node 标准库，无需 npm 依赖或解压工具。
@@ -78,15 +78,15 @@ Web 编辑器运行时，不依赖源码仓库；独立服务和 MCP 原有目�
 
 默认交付项目预览，用户明确要求后再导出最终视频。
 
-从旧版本首次使用时，如果 `~/.tik-editvideo-cli` 尚不存在但 `~/.fablecut`
+从旧版本首次使用时，如果 `~/.tik-video-editor-cli` 尚不存在但 `~/.fablecut`
 存在，CLI 会将旧目录一次性重命名到新位置。若两个目录都已存在，则不会自动覆盖或合并。
 
-运行 `tik-editvideo-cli --help` 查看全部命令和参数。
+运行 `tik-video-editor-cli --help` 查看全部命令和参数。
 
 导入素材时可附带已有 ASR 结果地址：
 
 ```bash
-tik-editvideo-cli import-media --project-id default --path /absolute/path/intro.mp4 --asr-url "https://example.com/intro-asr.json"
+tik-video-editor-cli import-media --project-id default --path /absolute/path/intro.mp4 --asr-url "https://example.com/intro-asr.json"
 ```
 
 `--asr-url` 为可选 HTTP(S) 地址，保存为 `media.asrUrl`；`addMedia` 也支持该字段。
@@ -128,33 +128,33 @@ FABLECUT_BROWSER_INSTALL_TEST=1 node --test --test-name-pattern='export starts t
 常用验证命令：
 
 ```bash
-command -v tik-editvideo-cli
-tik-editvideo-cli --help
-tik-editvideo-cli list-projects
-tik-editvideo-cli status
+command -v tik-video-editor-cli
+tik-video-editor-cli --help
+tik-video-editor-cli list-projects
+tik-video-editor-cli status
 ```
 
 启动服务后，日志中的 `app files` 应指向 `cli/runtime`，`projects` 和 `library`
-应指向 `~/.tik-editvideo-cli`，而不是源码仓库根目录。
+应指向 `~/.tik-video-editor-cli`，而不是源码仓库根目录。
 
 模拟正式发布包：
 
 ```bash
 cd /path/to/FableCut/cli
 npm pack
-npm install -g ./tik-editvideo-cli-1.7.0.tgz
+npm install -g ./tik-video-editor-cli-1.7.0.tgz
 ```
 
 取消开发链接：
 
 ```bash
-npm unlink -g tik-editvideo-cli
+npm unlink -g tik-video-editor-cli
 ```
 
 ### Optimized 导出
 
 ```bash
-tik-editvideo-cli export --project-id <返回的project_id> --engine optimized --output ./final.mp4
+tik-video-editor-cli export --project-id <返回的project_id> --engine optimized --output ./final.mp4
 ```
 
 默认仍为 `--engine fast`。新增方式需要 ffmpeg、ffprobe，浏览器由 CLI 自动准备，
@@ -167,12 +167,12 @@ CLI 仅输出导出方式、Chrome 路径及成片基本信息。
 
 ## CLI OpenAPI authentication
 
-Run `tik-editvideo-cli auth status` to validate the saved API Key and return
+Run `tik-video-editor-cli auth status` to validate the saved API Key and return
 `logged_in` plus `user_info`. A missing or rejected key returns
 `{"logged_in": false}` with exit code 0. Network and service failures are errors.
-Use `tik-editvideo-cli auth login` when signed out: it prints and opens a browser
+Use `tik-video-editor-cli auth login` when signed out: it prints and opens a browser
 login URL, polls until authorization or expiry, validates the returned key, and
-saves it to `~/.tik-editvideo-cli/auth.json` with mode `0600`. Add `--no-browser`
+saves it to `~/.tik-video-editor-cli/auth.json` with mode `0600`. Add `--no-browser`
 on headless systems. Credentials are never printed. The default OpenAPI origin
 is `https://app.tttci.com`; `--api-url <origin>` selects another environment and
 credentials are bound to that origin. The selected origin is saved on login.
@@ -188,11 +188,11 @@ command still controls local preview. Local editing remains available offline.
 ## 依赖检查、转写和通用下载
 
 ```bash
-tik-editvideo-cli doctor
-tik-editvideo-cli auth status
-tik-editvideo-cli asr --path "/绝对路径/素材.mp4"
-tik-editvideo-cli asr --path "/绝对路径/素材.mp4" --output "./audio.json"
-tik-editvideo-cli download --url "https://example.com/file" --output "./file"
+tik-video-editor-cli doctor
+tik-video-editor-cli auth status
+tik-video-editor-cli asr --path "/绝对路径/素材.mp4"
+tik-video-editor-cli asr --path "/绝对路径/素材.mp4" --output "./audio.json"
+tik-video-editor-cli download --url "https://example.com/file" --output "./file"
 ```
 
 doctor 检查 Node ≥18、ffmpeg、ffprobe，输出 `{ok, checks}`；全部通过退出码为 0，失败为 1，不安装依赖或启动服务。skill 在同一任务及环境中复用已成功的 doctor 和登录检查；`auth status` 按 `logged_in` 判断。

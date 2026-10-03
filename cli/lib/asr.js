@@ -65,7 +65,7 @@ class AsrClient {
       let result;
       try { result = await response.json(); }
       catch { throw new Error(signal.aborted ? (this.signal?.aborted ? "ASR cancelled" : "ASR OpenAPI request timed out") : "ASR OpenAPI returned invalid JSON"); }
-      if (response.status === 401 || [4010, 4011].includes(result?.status)) throw new Error("ASR API Key is invalid or expired; run tik-editvideo-cli auth login");
+      if (response.status === 401 || [4010, 4011].includes(result?.status)) throw new Error("ASR API Key is invalid or expired; run tik-video-editor-cli auth login");
       if (!result || !Number.isInteger(result.status)) throw new Error("ASR OpenAPI returned an invalid response");
       if (!response.ok || result.status !== 2000) {
         const detail = String(result.remark || result.msg || result.message || "Request failed").split(this.apiKey).join("[redacted]");
@@ -128,13 +128,13 @@ async function runAsr(options, { auth = new OpenAPIAuth({ apiURL: options["api-u
   const stat = fs.statSync(source, { throwIfNoEntry: false });
   if (!stat?.isFile() || stat.size <= 0) throw new Error("ASR input must be a nonempty media file");
   if (options.output !== undefined) outputPath(options.output);
-  if (!auth.apiKey) throw new Error("Not logged in; run tik-editvideo-cli auth login");
+  if (!auth.apiKey) throw new Error("Not logged in; run tik-video-editor-cli auth login");
   client ||= new AsrClient(auth.apiKey, { signal });
   let temporary, result;
   try {
     let audio = source;
     if (VIDEO.has(extension)) {
-      temporary = fs.mkdtempSync(path.join(os.tmpdir(), "tik-editvideo-cli-asr-"));
+      temporary = fs.mkdtempSync(path.join(os.tmpdir(), "tik-video-editor-cli-asr-"));
       audio = path.join(temporary, path.parse(source).name + ".mp3");
       await command("ffmpeg", ["-nostdin", "-v", "error", "-y", "-i", source, "-map", "0:a:0", "-vn", "-ac", "1", "-ar", "16000", "-c:a", "libmp3lame", "-q:a", "4", audio], 1800000, signal);
     }
@@ -148,7 +148,7 @@ async function runAsr(options, { auth = new OpenAPIAuth({ apiURL: options["api-u
         validateResult(value);
       } });
       return { ...result, ...saved };
-    } catch (error) { throw new Error(`${error.message}; transcription completed, json_url=${result.json_url}; retry with tik-editvideo-cli download`); }
+    } catch (error) { throw new Error(`${error.message}; transcription completed, json_url=${result.json_url}; retry with tik-video-editor-cli download`); }
   }
   return result;
 }

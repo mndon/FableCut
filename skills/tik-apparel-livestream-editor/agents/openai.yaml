@@ -1,0 +1,4 @@
+interface:
+  display_name: "服装带货直播切片剪辑师"
+  short_description: "精选服装带货直播的商品卖点与开头钩子，按语义剪成可预览、修改并按需导出的短片"
+  default_prompt: "使用 $tik-apparel-livestream-editor 作为服装带货直播切片剪辑师，将这段素材剪成一条带货短片，精选开头钩子与完整卖点，并交付成片预览。"

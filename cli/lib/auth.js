@@ -10,7 +10,7 @@ const DEFAULT_API_URL = "https://app.tttci.com";
 
 class OpenAPIAuth {
   constructor({ apiURL, home = os.homedir() } = {}) {
-    this.file = path.join(home, ".tik-editvideo-cli", "auth.json");
+    this.file = path.join(home, ".tik-video-editor-cli", "auth.json");
     let saved = {};
     try { saved = JSON.parse(fs.readFileSync(this.file, "utf8")); }
     catch (error) { if (error.code !== "ENOENT") throw new Error("Cannot read CLI credentials; run auth logout to reset them"); }
@@ -27,7 +27,7 @@ class OpenAPIAuth {
   async request(method, endpoint, { body, authenticated = true, timeout = 30000 } = {}) {
     const headers = { Accept: "application/json" };
     if (authenticated) {
-      if (!this.apiKey) throw new Error("Not logged in; run tik-editvideo-cli auth login");
+      if (!this.apiKey) throw new Error("Not logged in; run tik-video-editor-cli auth login");
       headers.Authorization = "Bearer " + this.apiKey;
     }
     if (body) headers["Content-Type"] = "application/json";
@@ -109,14 +109,14 @@ class OpenAPIAuth {
       const remaining = deadline - Date.now();
       if (remaining > 0) await new Promise(resolve => setTimeout(resolve, Math.min(session.interval * 1000, remaining)));
     }
-    throw new Error("CLI 登录已过期，请重新运行 tik-editvideo-cli auth login");
+    throw new Error("CLI 登录已过期，请重新运行 tik-video-editor-cli auth login");
   }
 }
 
 async function runAuth(action, options = {}) {
-  if (!["status", "login", "logout"].includes(action)) throw new Error("Use: tik-editvideo-cli auth status|login|logout [--api-url <origin>] [--no-browser]");
+  if (!["status", "login", "logout"].includes(action)) throw new Error("Use: tik-video-editor-cli auth status|login|logout [--api-url <origin>] [--no-browser]");
   if (action === "logout") {
-    fs.rmSync(path.join(os.homedir(), ".tik-editvideo-cli", "auth.json"), { force: true });
+    fs.rmSync(path.join(os.homedir(), ".tik-video-editor-cli", "auth.json"), { force: true });
     return { logged_in: false, logged_out: true };
   }
   if (options["api-url"] !== undefined && (typeof options["api-url"] !== "string" || !options["api-url"])) throw new Error("--api-url requires a URL");

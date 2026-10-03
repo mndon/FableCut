@@ -1,0 +1,4 @@
+interface:
+  display_name: "tik-video-editor-cli 视频剪辑与转写"
+  short_description: "通过 CLI 转写音视频、下载文件、编辑工程、预览和导出"
+  default_prompt: "使用 $tik-video-editor，通过 tik-video-editor-cli 处理音视频转写或文件下载；剪辑任务导入素材、编辑 project.json 工程并交付预览，明确要求后再导出最终视频。"
