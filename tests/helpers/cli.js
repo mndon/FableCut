@@ -3,7 +3,8 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { spawn } = require("node:child_process");
-const cli = path.resolve(__dirname, "../../cli/bin/tik-video-editor-cli.js");
+const cliDir = process.env.FABLECUT_TEST_CLI_DIR || path.resolve(__dirname, "../../cli");
+const cli = path.join(cliDir, "bin/tik-video-editor-cli.js");
 function fixture(t) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "tik 测试 home-"));
   t.after(() => fs.rmSync(home, { recursive: true, force: true }));

@@ -489,7 +489,15 @@ requests are still best filed as [GitHub issues](https://github.com/ronak-create
 
 ## License
 
-[MIT](LICENSE)
+The FableCut editor and server retain the [MIT license](LICENSE).
+The standalone `tik-video-editor-cli` uses a separate [noncommercial license](cli/LICENSE):
+noncommercial use is permitted; commercial use requires prior written
+authorization from 厦门沉浸网络科技有限公司 (contact: mindon@tttci.com). Commercial use
+includes paid editing, advertising, sales/livestream content, monetized content,
+SaaS integration and business production use, including internal business use.
+The CLI license is source-available, not an OSI open-source license. Third-party
+code and fonts retain their original licenses; see [third-party notices](cli/THIRD-PARTY-NOTICES.md).
+Existing MIT grants are not revoked by this change.
 
 ### Optimized export
 
@@ -535,6 +543,30 @@ on short projects; repeat exports reuse source frames. See [CLAUDE.md](CLAUDE.md
 for cache API details and reproducible browser/performance tests.
 Source fetch/decode, snapshot and pipeline timings are measured separately;
 they overlap and should not be summed as total export time.
+
+## CLI release packaging
+
+In `cli/`, run `npm ci` to install pinned build-only development tools. `npm run
+build` syncs the editor runtime and generates `cli/dist/`; `npm pack` and `npm
+publish` run the same build through `prepare`. The executable and `npm link`
+point to `dist/bin/`, so rebuild after source changes. Do not publish with
+`--ignore-scripts`, which can ship stale output.
+
+Packages contain `dist/`, build scripts, documentation and license notices,
+without the original `bin/`, `lib/`, `runtime/` or source maps. Terser compresses
+JavaScript and shortens local identifiers; javascript-obfuscator additionally
+obfuscates CLI identifiers and Base64 string tables. Browser shared globals and
+public properties are preserved; control-flow flattening, anti-debugging and
+self-defending code are disabled. Preview and export use the same compositor.
+These tools are development dependencies only; the installed CLI still uses
+only the Node standard library and can be rebuilt without build dependencies.
+Obfuscation increases copying effort but does not make shipped code secret.
+
+Run `node --test tests/cli-package.test.js` from the repository root to build a
+real tarball, install it offline in a temporary directory, check its contents
+and run CLI regressions against the installed code. Fast/Optimized export tests
+run when Chrome, ffmpeg and ffprobe are available; `FABLECUT_BROWSER_TEST=1`
+also verifies video, audio and frame-cache export parity.
 
 ## CLI OpenAPI authentication
 

@@ -6,7 +6,8 @@ const os = require("os");
 const path = require("path");
 const http = require("http");
 const { spawnSync } = require("child_process");
-const { OpenAPIAuth } = require("../lib/auth");
+const cliDir = process.env.FABLECUT_TEST_CLI_DIR || path.resolve(__dirname, "..");
+const { OpenAPIAuth } = require(path.join(cliDir, "lib/auth"));
 
 async function fixture(t, handler) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "cli-auth-test-"));
@@ -81,7 +82,7 @@ test("cross-origin login URLs are refused", async t => {
 test("CLI status and logout work without runtime and logout resets corrupt credentials", async t => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "cli-auth-command-"));
   t.after(() => fs.rmSync(home, { recursive: true, force: true }));
-  const run = action => spawnSync(process.execPath, ["-e", 'require("os").homedir = () => process.argv[1]; require(process.argv[2]).main(["auth", process.argv[3]]).catch(error => { console.error(error.message); process.exitCode = 1; });', home, path.resolve(__dirname, "../lib/cli.js"), action], { encoding: "utf8" });
+  const run = action => spawnSync(process.execPath, ["-e", 'require("os").homedir = () => process.argv[1]; require(process.argv[2]).main(["auth", process.argv[3]]).catch(error => { console.error(error.message); process.exitCode = 1; });', home, path.join(cliDir, "lib/cli.js"), action], { encoding: "utf8" });
   assert.deepEqual(JSON.parse(run("status").stdout), { logged_in: false });
   fs.mkdirSync(path.join(home, ".tik-video-editor-cli"), { recursive: true });
   fs.writeFileSync(path.join(home, ".tik-video-editor-cli", "auth.json"), "broken");

@@ -2,21 +2,22 @@
   "name": "tik-video-editor-cli",
   "version": "1.7.0",
   "description": "Local video editing, on-demand preview, and headless",
-  "license": "MIT",
+  "license": "SEE LICENSE IN LICENSE",
   "type": "commonjs",
   "bin": {
-    "tik-video-editor-cli": "bin/tik-video-editor-cli.js"
+    "tik-video-editor-cli": "dist/bin/tik-video-editor-cli.js"
   },
   "files": [
-    "bin/",
-    "lib/",
+    "dist/",
     "scripts/",
-    "runtime/",
-    "README.md"
+    "README.md",
+    "LICENSE",
+    "THIRD-PARTY-NOTICES.md"
   ],
   "scripts": {
     "sync-runtime": "node scripts/pack-runtime.js",
-    "prepare": "node scripts/pack-runtime.js"
+    "build": "node scripts/build-package.js",
+    "prepare": "node scripts/build-package.js"
   },
   "engines": {
     "node": ">=18"
@@ -26,5 +27,9 @@
     "video-editor",
     "cli",
     "headless-export"
-  ]
+  ],
+  "devDependencies": {
+    "javascript-obfuscator": "5.8.1",
+    "terser": "5.51.2"
+  }
 }

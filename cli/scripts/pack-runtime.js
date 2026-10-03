@@ -15,7 +15,7 @@ const missing = entries.filter((entry) => !fs.existsSync(path.join(root, entry))
 if (missing.length) {
   /* Registry installs already contain runtime/. `npm rebuild` may execute the
      prepare hook again, but the repository sources are intentionally absent. */
-  if (fs.existsSync(path.join(target, "server.js"))) process.exit(0);
+  if (fs.existsSync(path.join(target, "server.js")) || fs.existsSync(path.join(cliDir, "dist/runtime/server.js"))) process.exit(0);
   throw new Error("Missing FableCut source entries: " + missing.join(", "));
 }
 fs.rmSync(target, { recursive: true, force: true });

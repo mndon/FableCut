@@ -1,5 +1,17 @@
 # tik-video-editor-cli
 
+## 使用许可
+
+CLI 采用 [非商业使用及商业授权协议](LICENSE)：允许非商业用途，商业用途必须
+事先取得许可证中列明公司的书面授权。商业用途包括收费剪辑、广告、带货及直播
+营销、变现内容、SaaS 集成，以及企业生产和内部业务使用；免费提供服务也不
+自动视为非商业使用。许可方为厦门沉浸网络科技有限公司，商业授权请联系
+mindon@tttci.com。
+
+本协议属于源码可见协议，不属于 OSI 开源协议。它仅覆盖公司有权按该协议授权
+的 CLI 代码；FableCut 运行时及字体等第三方内容继续适用各自许可证，见
+[第三方声明](THIRD-PARTY-NOTICES.md)。此前已授予的 MIT 权利不受影响。
+
 FableCut 的零 npm 运行时依赖命令行工具，支持直接操作本地项目、按需启动预览服务以及
 通过无头浏览器导出最终视频。
 
@@ -100,22 +112,42 @@ ASR 内容，链接有效期由 ASR 服务决定；未记录 URL 的旧工程保
 
 ```bash
 cd /path/to/FableCut/cli
+npm ci
 npm link
 ```
 
-`npm link` 会执行 `prepare`，将仓库中的服务端、Web 编辑器和资源复制到
-`cli/runtime/`。全局命令链接到当前 `cli/`，因此修改 `cli/lib/` 或 `cli/bin/`
-后无需再次运行 `npm link`。
+`npm ci` / `npm link` 会执行 `prepare`，同步 `cli/runtime/` 并生成 `cli/dist/`。
+全局命令链接到 `cli/dist/bin/`；修改 CLI 或编辑器源码后运行 `npm run build`
+刷新发布目录，无需再次运行 `npm link`。
 
 如果修改了仓库根目录的 `server.js`、`app.js`、页面样式、`paths.js`、`project-store.js` 或素材库，需要刷新 CLI
 自带的运行时：
 
 ```bash
 cd /path/to/FableCut/cli
-npm run sync-runtime
+npm run build
 ```
 
 运行自动测试前先执行 `npm run sync-runtime`；在仓库根目录执行 `node --test tests/*.test.js`。测试使用隔离的临时用户目录。
+
+### 发布包压缩与混淆
+
+`npm pack` / `npm publish` 自动通过 `prepare` 生成发布目录。仅发布 `dist/`、
+构建脚本、README、package.json 和许可证，不发布原始 `bin/`、`lib/`、
+`runtime/` 或 source map。不要使用 `--ignore-scripts` 发布旧构建。
+CLI JavaScript 使用 Terser 压缩，再用 javascript-obfuscator 做标识符和 Base64
+字符串表混淆；编辑器、服务端、Worker 和 AudioWorklet 使用 Terser 压缩及局部
+变量名缩短。浏览器脚本保留跨文件全局名称；对象属性、接口及工程字段不改名，
+不启用控制流平坦化、反调试或自保护。预览和导出继续使用同一合成器。
+
+两个工具是固定版本的开发依赖，最终 CLI 仍只有 Node 标准库运行时依赖。
+安装和 `npm rebuild` 不需要构建工具；源码仓库保留可读文件及各自许可声明。
+混淆提高阅读和修改成本，不提供源码保密或防复制保证。
+
+在仓库根目录运行 `node --test tests/cli-package.test.js`，会构建真实 npm 包，
+离线安装到临时目录，并对安装后的混淆代码执行本地编辑、服务、登录及下载/ASR
+回归测试。有 Chrome、ffmpeg 和 ffprobe 时也验证 Fast / Optimized 成片；
+`FABLECUT_BROWSER_TEST=1` 额外启用带音轨、实际视频及帧缓存的浏览器导出对比。
 
 可选的真实浏览器安装测试（需要联网、ffmpeg 和 ffprobe，无需预装 Chrome）：
 

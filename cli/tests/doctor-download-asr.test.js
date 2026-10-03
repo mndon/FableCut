@@ -6,9 +6,10 @@ const os = require("node:os");
 const path = require("node:path");
 const http = require("node:http");
 const { spawn, spawnSync } = require("node:child_process");
-const { doctor } = require("../lib/doctor");
-const { downloadFile, httpURL } = require("../lib/download");
-const { AsrClient, runAsr, transcribeAudio, validateResult, metadata } = require("../lib/asr");
+const cliDir = process.env.FABLECUT_TEST_CLI_DIR || path.resolve(__dirname, "..");
+const { doctor } = require(path.join(cliDir, "lib/doctor"));
+const { downloadFile, httpURL } = require(path.join(cliDir, "lib/download"));
+const { AsrClient, runAsr, transcribeAudio, validateResult, metadata } = require(path.join(cliDir, "lib/asr"));
 const RESULT = { rich_result: { duration: 1000, sentences: [{ begin_time: 0, end_time: 1000, text: "你好。", channel_id: 7,
   words: [{ begin_time: 0, end_time: 1000, word: "你好", punc: "。", channel_id: 2 }] }] }, channel: [7, 2] };
 const BODY = JSON.stringify(RESULT, null, 2) + "\n";
@@ -25,7 +26,7 @@ async function server(t, handler) {
 }
 function cli(args, home, extraEnv = {}) {
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [path.resolve(__dirname, "../bin/tik-video-editor-cli.js"), ...args], {
+    const child = spawn(process.execPath, [path.join(cliDir, "bin/tik-video-editor-cli.js"), ...args], {
       cwd: home, env: { ...process.env, HOME: home, USERPROFILE: home, ...extraEnv },
     });
     let stdout = "", stderr = "";

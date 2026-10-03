@@ -831,6 +831,43 @@ directory printed by the test. These tests need ffmpeg, ffprobe and Chrome
 (`CHROME_PATH` can override the test browser). Speed depends on source codec,
 effects and cache state; the name does not guarantee faster exports.
 
+## CLI release packaging
+
+In `cli/`, run `npm ci` to install pinned build-only Terser and
+javascript-obfuscator development dependencies. `npm run build` syncs the
+runtime and generates `cli/dist/`; `npm pack` / `npm publish` run it via
+`prepare`. The npm executable and `npm link` use `dist/bin/`; rebuild after
+editing CLI or editor sources. Do not publish with `--ignore-scripts`.
+Published files include only `dist/`, build scripts, docs and license notices,
+not original `bin/`, `lib/`, `runtime/` or source maps. CLI files receive
+compression, identifier and Base64 string-table obfuscation; runtime scripts
+receive compression and variable mangling with browser shared globals preserved.
+Public properties, schemas and paths stay intact. No control-flow flattening,
+anti-debugging or self-defending code is used. Readable sources and license notices
+remain in the repository; obfuscation is not a confidentiality guarantee.
+Installed packages use only the Node standard library and need no build tools,
+including during `npm rebuild`. Preview/export keep the same compositor.
+
+`node --test tests/cli-package.test.js` packs and installs an actual tarball
+offline in a temporary directory, checks exclusions and runs CLI regressions
+against installed transformed code. Available Chrome/ffmpeg/ffprobe enable
+Fast/Optimized exports; `FABLECUT_BROWSER_TEST=1` also runs video/audio/cache
+parity tests. `FABLECUT_TEST_CLI_DIR` selects an alternate CLI directory for these
+tests only; it is not a product CLI setting.
+
+### CLI licensing
+
+The CLI's `cli/LICENSE` permits noncommercial use only; commercial use requires
+prior written authorization from 厦门沉浸网络科技有限公司 (mindon@tttci.com). Commercial use
+includes paid editing, advertising, sales/livestream and monetized content,
+SaaS integration, and business production/internal business use. This is a
+source-available custom license, not an OSI open-source license. It applies only
+to code the licensor has rights to license. The root FableCut MIT license and
+third-party/font permissions remain intact; existing MIT grants are not revoked.
+`cli/package.json` uses `SEE LICENSE IN LICENSE`. The build must preserve the
+CLI license, ship `THIRD-PARTY-NOTICES.md`, and copy the upstream root MIT license
+to `dist/runtime/LICENSE` instead of overwriting `cli/LICENSE`.
+
 ## CLI OpenAPI authentication
 
 Run `tik-video-editor-cli auth status` to validate the saved API Key and return

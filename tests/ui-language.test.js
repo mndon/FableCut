@@ -52,7 +52,8 @@ test('browser switches and persists UI language without changing project data or
   const listen = server => new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const reserve = http.createServer(); await listen(reserve);
   const port = reserve.address().port; await new Promise(resolve => reserve.close(resolve));
-  const server = spawn(process.execPath, [path.join(root, 'cli/runtime/server.js')], {
+  const runtime = path.join(process.env.FABLECUT_TEST_CLI_DIR || path.join(root, 'cli'), 'runtime/server.js');
+  const server = spawn(process.execPath, [runtime], {
     env: { ...process.env, HOST: '127.0.0.1', PORT: String(port), FABLECUT_DATA_DIR: path.join(directory, 'data') }, stdio: ['ignore', 'ignore', 'pipe'] });
   const children = [server];
   async function stop(child) {

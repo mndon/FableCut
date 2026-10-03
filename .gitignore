@@ -19,6 +19,10 @@ SUGGESTIONS.md
 
 # Misc
 node_modules/
+cli/runtime/
+cli/dist/
+cli/.dist-*/
+cli/*.tgz
 *.log
 .DS_Store
 Thumbs.db

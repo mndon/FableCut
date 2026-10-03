@@ -33,7 +33,8 @@ test("packaged runtime exports Fast and Optimized with matching frames", { skip:
   await fs.writeFile(path.join(projectDir, "project.json"), JSON.stringify(project));
   const net = require("node:net");
   const reserve = net.createServer(); await new Promise(r => reserve.listen(0, "127.0.0.1", r)); const port = reserve.address().port; await new Promise(r => reserve.close(r));
-  const running = spawn(process.execPath, [path.resolve(__dirname, "../cli/runtime/server.js")], { env: { ...process.env, FABLECUT_DATA_DIR: data, PORT: String(port), HOST: "127.0.0.1" }, stdio: ["ignore", "ignore", "pipe"] });
+  const runtime = path.join(process.env.FABLECUT_TEST_CLI_DIR || path.resolve(__dirname, "../cli"), "runtime/server.js");
+  const running = spawn(process.execPath, [runtime], { env: { ...process.env, FABLECUT_DATA_DIR: data, PORT: String(port), HOST: "127.0.0.1" }, stdio: ["ignore", "ignore", "pipe"] });
   t.after(() => stop(running));
   const base = `http://127.0.0.1:${port}`;
   for (let i = 0; i < 100; i++) { try { if ((await fetch(base + "/api/status")).ok) break; } catch {} await delay(100); }

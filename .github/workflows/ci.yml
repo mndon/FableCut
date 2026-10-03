@@ -81,3 +81,10 @@ jobs:
             if (bad) process.exit(1);
             console.log('all SVGs OK');
           "
+
+      - name: Install CLI build tools
+        working-directory: cli
+        run: npm ci --ignore-scripts
+
+      - name: Verify installed CLI release package
+        run: node --test tests/cli-package.test.js

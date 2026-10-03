@@ -194,7 +194,7 @@ test("export starts the server and renders a real MP4 with the browser composito
   if (managed) {
     // Exercise real download/extraction/launch with system discovery disabled.
     // CLI export below must discover this cache without an explicit browser.
-    await require("../cli/lib/browser").ensureBrowser(undefined, { cacheRoot: path.join(dataDir, "browsers"), candidates: [], env: {} });
+    await require(path.join(process.env.FABLECUT_TEST_CLI_DIR || path.resolve(__dirname, "../cli"), "lib/browser")).ensureBrowser(undefined, { cacheRoot: path.join(dataDir, "browsers"), candidates: [], env: {} });
   }
   const browserArgs = managed ? [] : ["--browser", browser];
   const exportEnv = managed ? { CHROME_PATH: "" } : {};
