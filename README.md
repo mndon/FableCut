@@ -544,29 +544,12 @@ for cache API details and reproducible browser/performance tests.
 Source fetch/decode, snapshot and pipeline timings are measured separately;
 they overlap and should not be summed as total export time.
 
-## CLI release packaging
+## CLI development and release
 
-In `cli/`, run `npm ci` to install pinned build-only development tools. `npm run
-build` syncs the editor runtime and generates `cli/dist/`; `npm pack` and `npm
-publish` run the same build through `prepare`. The executable and `npm link`
-point to `dist/bin/`, so rebuild after source changes. Do not publish with
-`--ignore-scripts`, which can ship stale output.
-
-Packages contain `dist/`, build scripts, documentation and license notices,
-without the original `bin/`, `lib/`, `runtime/` or source maps. Terser compresses
-JavaScript and shortens local identifiers; javascript-obfuscator additionally
-obfuscates CLI identifiers and Base64 string tables. Browser shared globals and
-public properties are preserved; control-flow flattening, anti-debugging and
-self-defending code are disabled. Preview and export use the same compositor.
-These tools are development dependencies only; the installed CLI still uses
-only the Node standard library and can be rebuilt without build dependencies.
-Obfuscation increases copying effort but does not make shipped code secret.
-
-Run `node --test tests/cli-package.test.js` from the repository root to build a
-real tarball, install it offline in a temporary directory, check its contents
-and run CLI regressions against the installed code. Fast/Optimized export tests
-run when Chrome, ffmpeg and ffprobe are available; `FABLECUT_BROWSER_TEST=1`
-also verifies video, audio and frame-cache export parity.
+See [cli/DEVELOP.md](cli/DEVELOP.md) for local development, runtime builds,
+package verification, and the release process. This document stays in the
+source repository and is excluded from the npm package. The CLI package root
+has no README, so npm does not automatically include it in releases.
 
 ## CLI OpenAPI authentication
 

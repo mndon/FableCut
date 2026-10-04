@@ -7,10 +7,12 @@
   "bin": {
     "tik-video-editor-cli": "dist/bin/tik-video-editor-cli.js"
   },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/"
+  },
   "files": [
     "dist/",
     "scripts/",
-    "README.md",
     "LICENSE",
     "THIRD-PARTY-NOTICES.md"
   ],

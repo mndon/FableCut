@@ -831,29 +831,12 @@ directory printed by the test. These tests need ffmpeg, ffprobe and Chrome
 (`CHROME_PATH` can override the test browser). Speed depends on source codec,
 effects and cache state; the name does not guarantee faster exports.
 
-## CLI release packaging
+## CLI development and release
 
-In `cli/`, run `npm ci` to install pinned build-only Terser and
-javascript-obfuscator development dependencies. `npm run build` syncs the
-runtime and generates `cli/dist/`; `npm pack` / `npm publish` run it via
-`prepare`. The npm executable and `npm link` use `dist/bin/`; rebuild after
-editing CLI or editor sources. Do not publish with `--ignore-scripts`.
-Published files include only `dist/`, build scripts, docs and license notices,
-not original `bin/`, `lib/`, `runtime/` or source maps. CLI files receive
-compression, identifier and Base64 string-table obfuscation; runtime scripts
-receive compression and variable mangling with browser shared globals preserved.
-Public properties, schemas and paths stay intact. No control-flow flattening,
-anti-debugging or self-defending code is used. Readable sources and license notices
-remain in the repository; obfuscation is not a confidentiality guarantee.
-Installed packages use only the Node standard library and need no build tools,
-including during `npm rebuild`. Preview/export keep the same compositor.
-
-`node --test tests/cli-package.test.js` packs and installs an actual tarball
-offline in a temporary directory, checks exclusions and runs CLI regressions
-against installed transformed code. Available Chrome/ffmpeg/ffprobe enable
-Fast/Optimized exports; `FABLECUT_BROWSER_TEST=1` also runs video/audio/cache
-parity tests. `FABLECUT_TEST_CLI_DIR` selects an alternate CLI directory for these
-tests only; it is not a product CLI setting.
+See [cli/DEVELOP.md](cli/DEVELOP.md) for local development, runtime builds,
+package verification, and the release process. This document stays in the
+source repository and is excluded from the npm package. The CLI package root
+has no README, so npm does not automatically include it in releases.
 
 ### CLI licensing
 

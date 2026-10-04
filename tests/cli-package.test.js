@@ -29,6 +29,8 @@ test("npm tarball ships transformed code and works without build dependencies", 
   assert.ok(files.includes("LICENSE"));
   assert.ok(files.includes("THIRD-PARTY-NOTICES.md"));
   assert.ok(files.includes("dist/runtime/LICENSE"));
+  assert.ok(!files.includes("README.md"));
+  assert.ok(!files.includes("DEVELOP.md"));
   assert.ok(!files.some(file => /^(bin|lib|runtime|tests|node_modules)\//.test(file) || file.endsWith(".map")));
   await run(npm, ["install", "--prefix", temp, "--omit=dev", "--offline", "--no-audit", "--no-fund", path.join(temp, packed.filename)]);
   const installed = path.join(temp, "node_modules/tik-video-editor-cli");
