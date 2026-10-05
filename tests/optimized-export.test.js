@@ -116,7 +116,7 @@ test("two sessions share an extraction and retain separate leases", { skip: !ffm
   assert.ok((await fs.stat(cache.frame(other, pp.id, result.key, 0))).isFile());
   cache.release(other, pp.id); assert.equal(cache.pins.size, 0);
 });
-test("export dialog preserves original defaults and gates only the new engine on ffprobe", () => {
+test("export dialog defaults to optimized and falls back according to available tools", () => {
   const vm = require("node:vm"), source = require("node:fs").readFileSync(path.join(__dirname, "../app.js"), "utf8");
   const code = source.slice(source.indexOf("function openExportSetup()"), source.indexOf("/* ── Fast export ── */"));
   const controls = new Map();
@@ -125,9 +125,10 @@ test("export dialog preserves original defaults and gates only the new engine on
     els: { engineFast: element("fast"), engineRealtime: element("realtime"), exportSetup: element("setup") }, alert() {},
     optimizedExport() { sandbox.chosen = "optimized"; }, fastExport() { sandbox.chosen = "fast"; }, startExport() { sandbox.chosen = "realtime"; } };
   vm.createContext(sandbox); vm.runInContext(code, sandbox);
-  sandbox.openExportSetup(); assert.equal(sandbox.els.engineFast.checked, true); assert.equal(element("engineOptimized").checked, false); assert.equal(element("engineOptimized").disabled, false);
-  element("engineOptimized").checked = true; sandbox.startChosenExport(); assert.equal(sandbox.chosen, "optimized");
+  sandbox.openExportSetup(); assert.equal(sandbox.els.engineFast.checked, false); assert.equal(element("engineOptimized").checked, true); assert.equal(element("engineOptimized").disabled, false);
+  sandbox.startChosenExport(); assert.equal(sandbox.chosen, "optimized");
   sandbox.state.ffprobe = false; sandbox.openExportSetup(); assert.equal(sandbox.els.engineFast.disabled, false); assert.equal(element("engineOptimized").disabled, true);
+  assert.equal(element("engineOptimized").checked, false); assert.equal(sandbox.els.engineFast.checked, true); sandbox.startChosenExport(); assert.equal(sandbox.chosen, "fast");
   sandbox.state.ffmpeg = false; sandbox.openExportSetup(); assert.equal(sandbox.els.engineRealtime.checked, true); sandbox.startChosenExport(); assert.equal(sandbox.chosen, "realtime");
 });
 test("cached PNG pixels match the native source frame at fractional trims and block boundaries", { skip: !ffmpeg }, async t => {

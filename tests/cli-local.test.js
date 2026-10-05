@@ -207,19 +207,23 @@ test("export starts the server and renders a real MP4 with the browser composito
   assert.ok(!fs.existsSync(path.join(dataDir, "server.log")));
   const output = path.join(home, "render.mp4");
   let result;
+  const liveProgress = [];
   try {
-    result = await run(["export", "--project-id", render, "--output", output, "--port", String(p), ...browserArgs, "--timeout", "60"], exportEnv);
+    result = await run(["export", "--project-id", render, "--output", output, "--port", String(p), ...browserArgs, "--timeout", "60"], exportEnv, chunk => {
+      assert.equal(result, undefined, "progress must arrive before process exit");
+      liveProgress.push(chunk);
+    });
     if (result.code === 0) {
-      const optimizedOutput = path.join(home, "optimized.mp4");
-      const optimized = json(await run(["export", "--project-id", render, "--engine", "optimized", "--output", optimizedOutput, "--port", String(p), ...browserArgs, "--timeout", "60"], exportEnv));
-      assert.equal(optimized.output, optimizedOutput); assert.equal(optimized.engine, "optimized");
-      assert.equal(optimized.sizeBytes, fs.statSync(optimizedOutput).size);
-      assert.equal(optimized.width, 160); assert.equal(optimized.height, 90); assert.equal(optimized.fps, 10);
-      assert.ok(optimized.durationSeconds >= 1);
-      assert.ok(Number.isFinite(optimized.elapsedSeconds) && optimized.elapsedSeconds > 0);
-      assert.ok(path.isAbsolute(optimized.browser) && fs.existsSync(optimized.browser));
-      assert.deepEqual(Object.keys(optimized).sort(), ["ok", "engine", "browser", "output", "sizeBytes", "durationSeconds", "width", "height", "fps", "elapsedSeconds"].sort());
-      const frames = JSON.parse(spawnSync("ffprobe", ["-v", "error", "-show_streams", "-of", "json", optimizedOutput], { encoding: "utf8" }).stdout);
+      const fastOutput = path.join(home, "fast.mp4");
+      const fast = json(await run(["export", "--project-id", render, "--engine", "fast", "--output", fastOutput, "--port", String(p), ...browserArgs, "--timeout", "60"], exportEnv));
+      assert.equal(fast.output, fastOutput); assert.equal(fast.engine, "fast");
+      assert.equal(fast.sizeBytes, fs.statSync(fastOutput).size);
+      assert.equal(fast.width, 160); assert.equal(fast.height, 90); assert.equal(fast.fps, 10);
+      assert.ok(fast.durationSeconds >= 1);
+      assert.ok(Number.isFinite(fast.elapsedSeconds) && fast.elapsedSeconds > 0);
+      assert.ok(path.isAbsolute(fast.browser) && fs.existsSync(fast.browser));
+      assert.deepEqual(Object.keys(fast).sort(), ["ok", "engine", "browser", "output", "sizeBytes", "durationSeconds", "width", "height", "fps", "elapsedSeconds"].sort());
+      const frames = JSON.parse(spawnSync("ffprobe", ["-v", "error", "-show_streams", "-of", "json", fastOutput], { encoding: "utf8" }).stdout);
       assert.equal(Number(frames.streams[0].nb_frames), 10);
     }
   }
@@ -227,8 +231,12 @@ test("export starts the server and renders a real MP4 with the browser composito
     try { const status = await (await fetch(`http://127.0.0.1:${p}/api/status`)).json(); process.kill(status.pid); } catch {}
     await new Promise(resolve => setTimeout(resolve, 200));
   }
+  assert.ok(liveProgress.some(chunk => chunk.includes("[export] starting")));
+  assert.match(result.stderr, /\[export\] preparing-media/);
+  assert.match(result.stderr, /\[export\] complete elapsed=/);
+  assert.ok(!result.stderr.includes("\r"));
   const summary = json(result);
-  assert.equal(summary.output, output); assert.equal(summary.engine, "fast");
+  assert.equal(summary.output, output); assert.equal(summary.engine, "optimized");
   assert.equal(summary.sizeBytes, fs.statSync(output).size);
   assert.equal(summary.width, 160); assert.equal(summary.height, 90); assert.equal(summary.fps, 10);
   assert.ok(summary.durationSeconds >= 1);

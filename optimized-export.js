@@ -306,7 +306,7 @@ async function optimizedExport(options = {}) {
     els.exportTitle.textContent = uiText("Mixing audio…");
     let tick = performance.now(); const wav = await renderAudioMix(dur); checked(); stats.phases.audioMs = performance.now() - tick;
     const name = options.name || project.name.replace(/[^\w\- ]+/g, "") || "export";
-    sessionId = (await api(projectApi("/api/export/begin"), { fps, name, requestId: options.requestId, engine: "optimized", cacheId })).id;
+    sessionId = (await api(projectApi("/api/export/begin"), { fps, name, requestId: options.requestId, totalFrames: count, engine: "optimized", cacheId })).id;
     if (wav) await api(`/api/export/audio?id=${sessionId}`, wav);
     await document.fonts.ready;
     if (project.clips.some(c => isTrackEnabled(c.track) && c.props?.bgRemove)) await ensureBgSeg();

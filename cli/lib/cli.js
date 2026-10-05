@@ -266,8 +266,8 @@ function exportFileInfo(file) {
   return info;
 }
 
-async function exportProject(client, options, started) {
-  const engine = options.engine === undefined ? "fast" : options.engine;
+async function exportProject(client, options, started, progress) {
+  const engine = options.engine === undefined ? "optimized" : options.engine;
   if (!["fast", "optimized"].includes(engine)) throw new CliError("--engine must be fast or optimized");
   const projectId = requireOption(options, "project-id");
   const project = await getProject(client, projectId);
@@ -280,7 +280,9 @@ async function exportProject(client, options, started) {
   const timeoutSeconds = Number(options.timeout || 3600);
   if (!Number.isFinite(timeoutSeconds) || timeoutSeconds <= 0) throw new CliError("--timeout must be a positive number of seconds");
   if (fs.existsSync(output) && !options.force) throw new CliError(`Output already exists: ${output} (pass --force to replace it)`);
+  progress.update("preparing-browser");
   const browserPath = await require("./browser").ensureBrowser(options.browser);
+  progress.update("preparing-media");
   const requestId = require("crypto").randomBytes(16).toString("hex");
   const profile = fs.mkdtempSync(path.join(os.tmpdir(), "tik-video-editor-cli-chrome-"));
   const url = new URL(client.base.href);
@@ -304,12 +306,14 @@ async function exportProject(client, options, started) {
       await delay(500);
       try { status = await client.request("GET", "/api/export/status", { query: { project: projectId, id: requestId } }); }
       catch (error) { if (error.status !== 404) throw error; }
+      if (status && ["rendering", "finalizing"].includes(status.state)) progress.update(status.state, status);
       if (status?.state === "complete") break;
       if (status?.state === "error") throw new CliError("Export failed: " + status.error);
       if (launchError) throw new CliError("Chrome failed to start: " + launchError.message);
       if (chrome.exitCode !== null || chrome.signalCode !== null) throw new CliError(`Chrome exited before export completed${stderr ? ": " + stderr.trim().slice(-800) : ""}`);
     }
     if (!status || status.state !== "complete") throw new CliError(`Export timed out after ${timeoutSeconds} seconds`);
+    progress.update("saving");
     await download(client, status.src, output, !!options.force);
     fileInfo = exportFileInfo(output);
   } finally {
@@ -319,6 +323,7 @@ async function exportProject(client, options, started) {
     fs.rmSync(profile, { recursive: true, force: true });
   }
   const elapsedSeconds = Math.round(Number(process.hrtime.bigint() - started) / 1e6) / 1000;
+  progress.update("complete");
   console.log(JSON.stringify({ ok: true, engine, browser: browserPath, output, ...fileInfo, elapsedSeconds }, null, 2));
 }
 
@@ -341,8 +346,10 @@ Usage:
   tik-video-editor-cli export --project-id <id> [--name <name>] [--output <mp4>] [--engine fast|optimized] [--force]
                      [--browser <path>] [--timeout <seconds>] [--host <host>] [--port <port>]
 
-Editing works without a server. status starts a background preview server if needed;
-export also starts it automatically. server start runs in the foreground.
+Editing works without a server. status and export start a background preview server
+if needed; server start runs in the foreground.
+export defaults to --engine optimized; --engine fast selects the legacy engine.
+Export progress is written as lines to stderr; stdout contains the final JSON.
 create-project names projects YYYYMMDD_<semantic-name> using the local date,
 generates a UUID v4 without hyphens (32 lowercase hex characters), and returns {project_id, name}. --id is unsupported.
 Storage is fixed at .tik-video-editor-cli inside the OS user home directory.
@@ -493,8 +500,11 @@ async function main(argv = process.argv.slice(2)) {
     if (options.engine !== undefined && !["fast", "optimized"].includes(options.engine)) throw new CliError("--engine must be fast or optimized");
     requireOption(options, "project-id");
     if (options.browser !== undefined) requireOption(options, "browser");
-    const status = await ensureServer(local, options);
-    await exportProject(new ExportClient(status.url), options, started);
+    const progress = require("./export-progress").createExportProgress();
+    try {
+      const status = await ensureServer(local, options);
+      await exportProject(new ExportClient(status.url), options, started, progress);
+    } finally { progress.stop(); }
   }
 }
 

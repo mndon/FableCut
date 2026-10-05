@@ -25,7 +25,7 @@ description: 服装带货直播切片剪辑师：从服装带货直播及相关�
 ## 准备与文本化
 
 1. 沿用用户要求，建立独立 `<作业名>_<YYYYMMDD_HHMMSS>` run；同名追加序号。中间数据放 `intermediate/`，用户要求导出时成片放根目录，不覆盖素材或已交付文件。按当前模型与工具确认视听、浏览器预览能力，命令存在不代表模型可视听。
-2. **导入素材**：读取 [数据契约](references/tools/pipeline-io.md)，通过 tik-video-editor 创建或选择工程，先运行 CLI import-media。符合要求的视频直接复制；按需原点对齐、重封装或转码均由 CLI 完成。把返回 media.src 对应的本地文件路径 作为后续转写、上传、剪辑的唯一实际素材，保存探查数据和 media ID。不在 skill 内运行 ffprobe/ffmpeg 或另做预处理。已有本地 ASR 传 --asr-local-path <本地JSON路径>，有 URL 时传 --asr-url；需要改变源时间原点时停止。
+2. **导入素材**：读取 [数据契约](references/tools/pipeline-io.md)，通过 tik-video-editor 创建或选择工程，先运行 CLI import-media。符合要求的视频直接复制；按需原点对齐、重封装或转码均由 CLI 完成。把返回 media.src 对应的本地文件路径 作为后续转写、上传、剪辑的唯一实际素材，保存探查数据和 media ID。不在 skill 内运行 ffprobe/ffmpeg 或另做预处理。
 3. **获取转写**：通过媒体命令优先复用 media.asrLocalPath 或 media.asrUrl。新转写直接运行 `tik-video-editor-cli media --action asr --project-id "$PROJECT_ID" --media-id "$MEDIA_ID" --output <本地JSON路径>`；音频提取及输出校验由 CLI 完成。CLI 自动保存 media.asrLocalPath/asrUrl，不重复导入。下载失败不重转，缺凭据不搜索 shell 配置。
 4. **建立索引**：按原始结果的 `channel` 生成稳定短语与声音摘要，用户时间范围只限制候选；无可用内容时停止选句。读一次完整紧凑索引；后续按编号查上下文/words，不重读大 JSON、不重建编号。
 5. 读取 [主播档案](references/business/apparel/hosts.md)，按品牌/别名优先、主播兜底匹配；不凭 ASR 声音标签认定真人。用户参数优先，档案红线叠加品类红线，身份冲突集中询问。
@@ -56,4 +56,4 @@ description: 服装带货直播切片剪辑师：从服装带货直播及相关�
 
 目标和倍速确定后，从导入结果计算时长比例；不足目标先解决，超过两小时提示处理成本，素材倍率低于8提醒可能剪不足。目标或倍速改变后重算，详见数据契约。每轮修改完整重展脚本，不只贴差异。
 
-实际文件路径解析：将 `media.src` 按路径段 URL 解码后拼接到 CLI 数据目录 `~/.tik-video-editor-cli/` 下。`import-media` 不返回 `preparation`；探查记录只保存 `media` 的 duration/width/height。
+实际文件路径解析：将 `media.src` 按路径段 URL 解码后拼接到 CLI 数据目录 `~/.tik-video-editor-cli/` 下。探查记录只保存 `media` 的 duration/width/height。

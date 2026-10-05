@@ -194,9 +194,10 @@ same time.
 - Fast export: browser renders every frame + an offline audio mix, ffmpeg
   encodes a frame-accurate CRF-18 MP4 (keeps rendering if you switch tabs)
 - Realtime MediaRecorder fallback when ffmpeg isn't available
-- Opt-in **Optimized (ffmpeg + frame cache)**: native-timestamp source frame
+- Default **Optimized (ffmpeg + frame cache)**: native-timestamp source frame
   caching and an ordered, bounded upload pipeline; requires ffmpeg + ffprobe.
-  Fast and Realtime remain available, with the existing defaults.
+  Listed first in the export dialog. Without ffprobe, the UI defaults to Fast;
+  without the server/ffmpeg, it defaults to Realtime.
 
 ## Quick start
 
@@ -567,7 +568,7 @@ Select **Optimized (ffmpeg + frame cache)** in Export, or run:
 tik-video-editor-cli export --project-id <returned-project_id> --engine optimized --output ./final.mp4
 ```
 
-`--engine fast` remains the CLI default. Optimized uses the same browser
+`optimized` is the CLI default; pass `--engine fast` to select Fast. Optimized uses the same browser
 compositor, offline audio mix and output settings as Fast. It pre-decodes local
 SDR constant-frame-rate video into five-second, lossless PNG cache blocks,
 selecting native display timestamps for fixed-speed clips. Small millisecond
@@ -599,7 +600,7 @@ when the timeline duration is not an exact multiple of the frame interval.
 The UI shows export phases and completion time. The completion status API includes `metrics` with
 phase timings, cache hits/misses, compatibility fallback reasons, resource
 high-water marks and total time. Initial preparation can outweigh the benefit
-on short projects; repeat exports reuse source frames. See [CLAUDE.md](CLAUDE.md#optimized-export-opt-in)
+on short projects; repeat exports reuse source frames. See [CLAUDE.md](CLAUDE.md#optimized-export)
 for cache API details and reproducible browser/performance tests.
 Source fetch/decode, snapshot and pipeline timings are measured separately;
 they overlap and should not be summed as total export time.
@@ -705,3 +706,25 @@ Paths from another device are preserved in project documents but may not exist
 locally; use `asrUrl` to recover a local copy. Trims and speed changes do not alter
 these source-media bindings. Full-document validation checks path syntax, not
 file availability; import and ASR operations validate files when used.
+
+### CLI export progress
+
+CLI export writes newline-delimited progress to stderr (including when piped),
+with immediate stage changes and a heartbeat every two seconds. Stages are
+`starting`, `preparing-browser`, `preparing-media`, `rendering`, `finalizing`,
+`saving`, and `complete`. Rendering reports received/total frames and percentage;
+100% frames does not mean encoding, audio muxing and saving have finished.
+Elapsed seconds cover the command; preparation has no estimated percentage.
+Stdout remains a single final JSON result. Optimized requires ffprobe as well as
+ffmpeg; use `--engine fast` explicitly if needed. The UI lists Optimized first and selects it by default when available; without
+ffprobe it selects Fast, and without the server/ffmpeg it selects Realtime.
+
+Agents should stream stderr or start a process session and poll its incremental
+output until exit. No TTY, carriage-return animation or ANSI control codes are
+required. Tools that buffer output until exit cannot show live progress; merging
+stderr into stdout (`2>&1`) also means the combined output is no longer pure JSON.
+
+`POST /api/export/begin` accepts optional positive integer `totalFrames`.
+`GET /api/export/status` returns `frames` and optional `totalFrames` during
+`rendering` and the new `finalizing` state (encoding/muxing). Existing clients
+can omit the total. `complete` and `error` retain their existing meanings.

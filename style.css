@@ -674,6 +674,10 @@ body.track-size-s .clip.selected {
   font-size: 16px;
 }
 
+.bin-thumb-video {
+  background-size: contain;
+}
+
 .bin-meta {
   min-width: 0;
   flex: 1;

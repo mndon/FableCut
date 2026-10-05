@@ -815,8 +815,11 @@ async function grabThumb(m) {
   v.currentTime = Math.min(0.5, (v.duration || 1) / 2);
   await new Promise((res) => { v.onseeked = res; setTimeout(res, 1500); });
   const c = document.createElement("canvas");
-  c.width = 160; c.height = 90;
-  c.getContext("2d").drawImage(v, 0, 0, 160, 90);
+  // Preserve the decoded frame aspect ratio, including portrait videos.
+  const scale = Math.min(160 / v.videoWidth, 160 / v.videoHeight, 1);
+  c.width = Math.max(1, Math.round(v.videoWidth * scale));
+  c.height = Math.max(1, Math.round(v.videoHeight * scale));
+  c.getContext("2d").drawImage(v, 0, 0, c.width, c.height);
   runtime.mediaAux.set(m.id, { ...(runtime.mediaAux.get(m.id) || {}), thumb: c.toDataURL("image/jpeg", 0.6) });
   v.src = "";
   renderBin(); state.dirtyTimeline = true;
@@ -1002,7 +1005,7 @@ function renderBin() {
     const icon = mediaKindIcon(m.kind, "🎞");
     const thumbSrc = aux.thumb || (m.kind === "image" || m.kind === "svg" ? m.src : null);
     item.innerHTML = `
-      <div class="bin-thumb"></div>
+      <div class="bin-thumb${m.kind === "video" ? " bin-thumb-video" : ""}"></div>
       <div class="bin-meta">
         <div class="bin-name"></div>
         <div class="bin-sub">${uiText(m.kind)}${m.duration ? " · " + fmt(m.duration) : ""}</div>
@@ -5489,7 +5492,9 @@ function loop(ts) {
 }
 
 /* ═══════════════════════════ EXPORT ═══════════════════════════ */
-/* Two engines:
+/* Three engines:
+   – optimized: default when available; caches source frames and pipelines
+     rendering through the same compositor and ffmpeg output as fast.
    – fast: the browser renders every frame with the normal compositor
      (frame-accurate, works unfocused) and streams JPEGs + an offline audio
      mix to the server, where ffmpeg encodes a real CRF-18 MP4.
@@ -5500,11 +5505,12 @@ function openExportSetup() {
   if (state.exporting) return;
   if (!project.clips.length) { alert(uiText("Timeline is empty — add some clips first.")); return; }
   const fastOk = state.connected && state.ffmpeg;
+  const optimizedOk = !!(fastOk && state.ffprobe);
   els.engineFast.disabled = !fastOk;
-  els.engineFast.checked = fastOk;
+  els.engineFast.checked = !!fastOk && !optimizedOk;
   els.engineRealtime.checked = !fastOk;
-  $("engineOptimized").checked = false;
-  $("engineOptimized").disabled = !(fastOk && state.ffprobe);
+  $("engineOptimized").checked = optimizedOk;
+  $("engineOptimized").disabled = !optimizedOk;
   syncExportSetupNotes();
   els.exportSetup.classList.remove("hidden");
 }
@@ -5670,7 +5676,7 @@ async function fastExport(options = {}) {
     if (renderCancelled) throw new Error("cancelled");
     const exportName = options.name || project.name.replace(/[^\w\- ]+/g, "") || "export";
     const begin = await fetch(projectApi("/api/export/begin"), {
-      method: "POST", body: JSON.stringify({ fps, name: exportName, requestId: options.requestId }),
+      method: "POST", body: JSON.stringify({ fps, name: exportName, requestId: options.requestId, totalFrames: frames }),
     }).then((r) => r.json());
     if (!begin.id) throw new Error(begin.error || "export begin failed");
     sessId = begin.id;

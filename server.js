@@ -179,7 +179,7 @@ function setExportRequest(id, value) {
     for (const [key] of oldest) exportRequests.delete(key);
   }
 }
-function beginExport(fps, name, projectId, requestId, cacheId) {
+function beginExport(fps, name, projectId, requestId, cacheId, totalFrames) {
   const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fablecut-"));
   const videoPath = path.join(dir, "video.mp4");
@@ -203,11 +203,11 @@ function beginExport(fps, name, projectId, requestId, cacheId) {
   proc.stdin.on("error", () => {}); // EPIPE if ffmpeg dies mid-stream; surfaced via exit code
   const sess = {
     proc, dir, videoPath, name: safeName(name || "export"), projectId, requestId,
-    cacheId, wav: null, frames: 0, frameBytes: 0, err: () => stderr,
+    cacheId, totalFrames: Number.isSafeInteger(totalFrames) && totalFrames > 0 ? totalFrames : undefined, wav: null, frames: 0, frameBytes: 0, err: () => stderr,
     done: new Promise((res) => proc.on("close", res)),
   };
   exportSessions.set(id, sess);
-  setExportRequest(requestId, { state: "rendering", projectId });
+  setExportRequest(requestId, { state: "rendering", projectId, frames: 0, totalFrames: sess.totalFrames });
   return id;
 }
 function cleanupExport(id) {
@@ -422,7 +422,7 @@ const server = http.createServer(async (req, res) => {
       const pp = requestProject(url);
       const opts = JSON.parse((await readBody(req)).toString("utf8") || "{}");
       if (opts.engine === "optimized") sourceCache.get(opts.cacheId, pp.id);
-      sendJSON(res, 200, { id: beginExport(opts.fps || 30, opts.name, pp.id, opts.requestId, opts.engine === "optimized" ? opts.cacheId : undefined) });
+      sendJSON(res, 200, { id: beginExport(opts.fps || 30, opts.name, pp.id, opts.requestId, opts.engine === "optimized" ? opts.cacheId : undefined, opts.totalFrames) });
     } catch (e) { sendJSON(res, 500, { error: String(e) }); }
     return;
   }
@@ -437,6 +437,7 @@ const server = http.createServer(async (req, res) => {
       if (!sess.proc.stdin.write(body))
         await new Promise((r) => sess.proc.stdin.once("drain", r));
       sess.frames++; sess.frameBytes += body.length;
+      setExportRequest(sess.requestId, { state: "rendering", projectId: sess.projectId, frames: sess.frames, totalFrames: sess.totalFrames });
       sendJSON(res, 200, { ok: true });
     } catch (e) { sendJSON(res, 500, { error: String(e) }); }
     return;
@@ -461,6 +462,7 @@ const server = http.createServer(async (req, res) => {
       const endBody = await readBody(req);
       const metrics = endBody.length ? JSON.parse(endBody.toString()).metrics : undefined;
       if (!sess.frames) throw new Error("export received no video frames");
+      setExportRequest(sess.requestId, { state: "finalizing", projectId: sess.projectId, frames: sess.frames, totalFrames: sess.totalFrames });
       sess.proc.stdin.end();
       const code = await sess.done;
       if (code !== 0) throw new Error("ffmpeg encode failed: " + sess.err());

@@ -158,16 +158,16 @@
   <div class="dialog">
     <h2><span data-i18n="Export">Export</span></h2>
     <label class="engine-opt">
+      <input type="radio" name="engine" id="engineOptimized">
+      <span><b><span data-i18n="Optimized (ffmpeg + frame cache)">Optimized (ffmpeg + frame cache)</span></b><br><span class="dim" id="engineOptimizedNote"><span data-i18n="Pre-decodes video frames and caches them. First export needs preparation; you can switch tabs.">Pre-decodes video frames and caches them. First export needs preparation; you can switch tabs.</span></span></span>
+    </label>
+    <label class="engine-opt">
       <input type="radio" name="engine" id="engineFast">
       <span><b><span data-i18n="Fast (ffmpeg)">Fast (ffmpeg)</span></b><br><span class="dim" id="engineFastNote"><span data-i18n="Frame-accurate ffmpeg encode. Keeps rendering if you switch tabs.">Frame-accurate ffmpeg encode. Keeps rendering if you switch tabs.</span></span></span>
     </label>
     <label class="engine-opt">
       <input type="radio" name="engine" id="engineRealtime">
       <span><b><span data-i18n="Realtime (in-browser)">Realtime (in-browser)</span></b><br><span class="dim"><span data-i18n="Plays the timeline once and records it. Keep the tab focused.">Plays the timeline once and records it. Keep the tab focused.</span></span></span>
-    </label>
-    <label class="engine-opt">
-      <input type="radio" name="engine" id="engineOptimized">
-      <span><b><span data-i18n="Optimized (ffmpeg + frame cache)">Optimized (ffmpeg + frame cache)</span></b><br><span class="dim" id="engineOptimizedNote"><span data-i18n="Pre-decodes video frames and caches them. First export needs preparation; you can switch tabs.">Pre-decodes video frames and caches them. First export needs preparation; you can switch tabs.</span></span></span>
     </label>
     <div class="export-track-warn hidden" id="exportTrackWarn" role="status"></div>
     <div class="dialog-actions">
