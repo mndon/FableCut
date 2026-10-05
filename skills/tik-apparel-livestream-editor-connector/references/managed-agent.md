@@ -2,7 +2,7 @@
 
 核对日期：2026-09-18，CLI/skills 1.26.0。运行时以已安装版本的帮助和官方接口为准。
 
-官方来源：[发起会话](https://docs.bailian.console.aliyun.com/zh/model-studio/managed-agents-session-event)、[创建 Session](https://docs.bailian.console.aliyun.com/zh/model-studio/session-create)、[发送 Event](https://docs.bailian.console.aliyun.com/zh/model-studio/event-post)、[文件上传与挂载](https://docs.bailian.console.aliyun.com/zh/model-studio/managed-agents-file)、[File API](https://docs.bailian.console.aliyun.com/zh/model-studio/file-upload)。
+官方来源：[发起会话](https://docs.bailian.console.aliyun.com/zh/model-studio/managed-agents-session-event)、[创建 Session](https://docs.bailian.console.aliyun.com/zh/model-studio/session-create)、[发送 Event](https://docs.bailian.console.aliyun.com/zh/model-studio/event-post)、[文件上传与挂载](https://docs.bailian.console.aliyun.com/zh/model-studio/managed-agents-xfile)、[File API](https://docs.bailian.console.aliyun.com/zh/model-studio/file-upload)。
 
 ## 目标、鉴权与 CLI 配置
 

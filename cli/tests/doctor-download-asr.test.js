@@ -278,7 +278,8 @@ test("ASR subprocess timeout, missing dependency and cancellation stop the media
   await assert.rejects(pending, /cancelled/);
 });
 
-test("CLI ASR uses persisted credentials, runs the full gateway protocol and saves original result bytes", async t => {
+for (const environmentKey of ["", "synthetic-environment-key"]) {
+test(`CLI ASR uses ${environmentKey ? "environment" : "persisted"} credentials, runs the full gateway protocol and saves original result bytes`, async t => {
   if (spawnSync("ffprobe", ["-version"]).status !== 0) return t.skip("requires ffprobe");
   const root = temp(t), file = path.join(root, "speech.wav"), output = path.join(root, "result.json");
   // One second of 16 kHz, 16-bit mono PCM, no external encoder required.
@@ -299,7 +300,7 @@ test("CLI ASR uses persisted credentials, runs the full gateway protocol and sav
       if (req.url === "/upload") { assert.deepEqual(bytes, wav); return res.end(); }
       return res.end(BODY);
     }
-    assert.equal(req.headers.authorization, "Bearer synthetic-persisted-key");
+    assert.equal(req.headers.authorization, "Bearer " + (environmentKey || "synthetic-persisted-key"));
     const body = bytes.length ? JSON.parse(bytes) : undefined;
     let data;
     if (req.url === "/open/api/v2/toolExtract") {
@@ -330,7 +331,7 @@ test("CLI ASR uses persisted credentials, runs the full gateway protocol and sav
   `;
   const result = await new Promise((resolve, reject) => {
     const child = spawn(process.execPath, ["-e", script, root, path.join(cliDir, "lib/cli.js"), base, file, output],
-      { env: { ...process.env, TIK_BASE_URL: "", TIK_API_KEY: "obsolete-key-must-not-be-used" } });
+      { env: { ...process.env, TIK_BASE_URL: "", TIK_API_KEY: environmentKey } });
     let stdout = "", stderr = "";
     child.stdout.on("data", data => stdout += data); child.stderr.on("data", data => stderr += data);
     child.on("error", reject); child.on("close", code => resolve({ code, stdout, stderr }));
@@ -340,8 +341,11 @@ test("CLI ASR uses persisted credentials, runs the full gateway protocol and sav
   assert.equal(JSON.parse(result.stdout).path, output);
   assert.equal(JSON.parse(result.stdout).media.asrLocalPath, output);
   assert.equal(result.stdout.includes("synthetic-persisted-key"), false);
+  assert.equal((result.stdout + result.stderr).includes("synthetic-environment-key"), false);
   assert.equal(fs.readFileSync(output, "utf8"), BODY);
   assert.deepEqual(requests, ["/open/api/v2/toolExtract", "/open/api/v2/toolExtract/12/applyAudioUploadAddresses",
     "/upload", "/open/api/v2/toolExtract/12/audioTask", "/open/api/v2/toolExtract/12", "/result"]);
   assert.ok(!fs.existsSync(path.join(root, ".tik-video-editor-cli", "server.log")));
 });
+
+}

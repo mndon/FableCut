@@ -11,7 +11,7 @@ description: 服装带货直播切片剪辑师：接收服装带货直播及相�
 
 先按 [tik-video-editor](../tik-video-editor/SKILL.md) 初始化 CLI，再依次运行 `tik-video-editor-cli doctor` 和 `tik-video-editor-cli auth status`。doctor 需退出码为 0 且 `ok: true`；登录按 `logged_in` 判断，未登录按该 skill 的流程执行 `auth login`。
 
-同一任务、同一运行环境中，其他 skill 已成功完成的检查直接复用，不重复执行；客户端与云端分别检查。失败停止并报告，不用后续成功命令掩盖错误。传输数据脚本仍需 Python 3 标准库；输入媒体处理由 CLI 导入负责；不再使用旧 Python ASR 环境检查或 `TIK_API_KEY`。
+同一任务、同一运行环境中，其他 skill 已成功完成的检查直接复用，不重复执行；客户端与云端分别检查。失败停止并报告，不用后续成功命令掩盖错误。传输数据脚本仍需 Python 3 标准库；输入媒体处理由 CLI 导入负责；不再使用旧 Python ASR 环境检查。
 
 ## 分工
 

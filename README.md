@@ -614,7 +614,25 @@ has no README, so npm does not automatically include it in releases.
 
 ## CLI OpenAPI authentication
 
-Run `tik-video-editor-cli auth status` to validate the saved API Key and return
+Set `TIK_API_KEY` to authenticate without browser login:
+
+```bash
+export TIK_API_KEY="<your-api-key>"
+tik-video-editor-cli auth status
+```
+
+A nonempty `TIK_API_KEY` (trimmed of surrounding whitespace) takes precedence over
+saved credentials for authentication and ASR. An unset or blank value falls back
+to the saved login key. Environment keys are never automatically written to
+`auth.json`; `auth login` validates and reuses them, and a rejected environment
+key must be updated or unset before browser login. There is no fallback to saved
+credentials when an environment key is rejected. `auth logout` deletes only the
+saved file and does not clear the environment variable; unset `TIK_API_KEY` to
+stop using it. The API origin precedence is `--api-url`, `TIK_BASE_URL`, saved
+`base_url`, then `https://app.tttci.com`. Environment keys apply to the selected
+origin; saved keys are used only when their stored origin matches.
+
+Run `tik-video-editor-cli auth status` to validate the active API Key and return
 `logged_in` plus `user_info`. A missing or rejected key returns
 `{"logged_in": false}` with exit code 0. Network and service failures are errors.
 Use `tik-video-editor-cli auth login` when signed out: it prints and opens a browser
@@ -650,7 +668,7 @@ tik-video-editor-cli media --action asr --project-id <id> --media-id <media-id> 
 tik-video-editor-cli download --url "https://example.com/file" --output ./file
 ```
 
-ASR uses the saved CLI login key (not `TIK_API_KEY`) and the existing gateway at
+ASR uses `TIK_API_KEY` when nonempty, otherwise the saved CLI login key, and the existing gateway at
 `https://skgw-tik.tttci.com/open`; `--api-url` selects the credential origin,
 not the ASR gateway. It supports MP3, WAV, M4A and AAC audio, and MP4, MOV, MKV,
 AVI, WebM, M4V, FLV, TS, MTS, M2TS and WMV video. Video uses its first audio

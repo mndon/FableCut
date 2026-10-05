@@ -1,6 +1,6 @@
 {
   "name": "tik-video-editor-cli",
-  "version": "1.7.0",
+  "version": "1.7.1",
   "description": "Local video editing, on-demand preview, and headless",
   "license": "SEE LICENSE IN LICENSE",
   "type": "commonjs",

@@ -6,6 +6,9 @@ const os = require("os");
 const path = require("path");
 const http = require("http");
 const { spawnSync } = require("child_process");
+// Keep tests independent of credentials in the invoking shell.
+delete process.env.TIK_API_KEY;
+delete process.env.TIK_BASE_URL;
 const cliDir = process.env.FABLECUT_TEST_CLI_DIR || path.resolve(__dirname, "..");
 const { OpenAPIAuth } = require(path.join(cliDir, "lib/auth"));
 
@@ -132,3 +135,48 @@ for (const key of ["", "sk-invalid", "sk-550e8400-e29b-11d4-a716-446655440000260
     assert.equal(fs.existsSync(f.auth.file), false);
   });
 }
+
+
+test("environment key overrides saved credentials without persisting and blank values fall back", async t => {
+  t.after(() => { delete process.env.TIK_API_KEY; });
+  let expected = "environment-key";
+  const f = await fixture(t, (req, res) => {
+    assert.equal(req.url, "/open/api/v1/auth/status");
+    assert.equal(req.headers.authorization, "Bearer " + expected);
+    ok(res, { user_info: { uid: "environment-user" } });
+  });
+  process.env.TIK_API_KEY = "  environment-key ";
+  const fresh = new OpenAPIAuth({ apiURL: f.apiURL, home: f.home });
+  assert.equal((await fresh.login({ openBrowser: false })).logged_in, true);
+  assert.equal(fs.existsSync(fresh.file), false);
+  f.auth.save("saved-key");
+  const original = fs.readFileSync(f.auth.file, "utf8");
+  assert.equal((await new OpenAPIAuth({ apiURL: f.apiURL, home: f.home }).login()).logged_in, true);
+  assert.equal(fs.readFileSync(f.auth.file, "utf8"), original);
+  assert.equal(new OpenAPIAuth({ apiURL: "https://other.example", home: f.home }).apiKey, expected);
+  expected = "saved-key";
+  for (const value of ["", "  "]) {
+    process.env.TIK_API_KEY = value;
+    assert.equal((await new OpenAPIAuth({ home: f.home }).status()).logged_in, true);
+  }
+  delete process.env.TIK_API_KEY;
+  assert.equal(new OpenAPIAuth({ home: f.home }).apiKey, "saved-key");
+});
+
+test("rejected environment key never falls back or starts browser login and errors redact the key", async t => {
+  t.after(() => { delete process.env.TIK_API_KEY; });
+  let status = 4011;
+  const f = await fixture(t, (req, res) => {
+    assert.equal(req.url, "/open/api/v1/auth/status");
+    assert.equal(req.headers.authorization, "Bearer rejected-environment-key");
+    res.end(JSON.stringify({ status, msg: "denied rejected-environment-key" }));
+  });
+  f.auth.save("saved-key");
+  process.env.TIK_API_KEY = "rejected-environment-key";
+  const auth = new OpenAPIAuth({ home: f.home });
+  assert.deepEqual(await auth.status(), { logged_in: false });
+  await assert.rejects(auth.login(), /TIK_API_KEY was rejected/);
+  status = 5000;
+  await assert.rejects(auth.status(), error => error.message === "denied [redacted]");
+  assert.equal(JSON.parse(fs.readFileSync(auth.file)).api_key, "saved-key");
+});

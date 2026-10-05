@@ -21,7 +21,8 @@ class OpenAPIAuth {
     if (!["https:", "http:"].includes(base.protocol) || base.username || base.password || base.search || base.hash || base.pathname !== "/")
       throw new Error("OpenAPI base URL must be an HTTP(S) origin without credentials, path, query, or fragment");
     this.baseURL = base.origin;
-    this.apiKey = saved.base_url === this.baseURL && typeof saved.api_key === "string" ? saved.api_key : "";
+    this.environmentKey = (process.env.TIK_API_KEY || "").trim();
+    this.apiKey = this.environmentKey || (saved.base_url === this.baseURL && typeof saved.api_key === "string" ? saved.api_key : "");
   }
 
   async request(method, endpoint, { body, authenticated = true, timeout = 30000 } = {}) {
@@ -76,6 +77,7 @@ class OpenAPIAuth {
   async login({ openBrowser = true } = {}) {
     const current = await this.status();
     if (current.logged_in) return current;
+    if (this.environmentKey) throw new Error("TIK_API_KEY was rejected; update or unset it before running auth login");
     const session = await this.request("POST", "/open/api/v1/cli_auth", { authenticated: false });
     if (!/^[a-f0-9]{64}$/.test(session?.device_code) || !Number.isFinite(session?.expires_in) || session.expires_in <= 0 || !Number.isFinite(session?.interval) || session.interval <= 0)
       throw new Error("OpenAPI returned an invalid login session");
