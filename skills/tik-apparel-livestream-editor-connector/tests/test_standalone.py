@@ -33,11 +33,13 @@ class ClientPackageTests(unittest.TestCase):
                 shutil.copytree(ROOT.parent / name, Path(temp) / name,
                                 ignore=shutil.ignore_patterns("__pycache__", "tests"))
             environment = dict(os.environ, PYTHONPATH="", PYTHONDONTWRITEBYTECODE="1")
-            for script in ("prepare_video.py", "probe_video.py", "exchange.py", "create_session.py"):
+            for script in ("exchange.py", "create_session.py"):
                 with self.subTest(script=script):
                     result = subprocess.run([sys.executable, str(installed / "scripts" / script), "--help"],
                                             cwd=temp, env=environment, text=True, capture_output=True)
                     self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertFalse((installed / "scripts/prepare_video.py").exists())
+            self.assertFalse((installed / "scripts/probe_video.py").exists())
             self.assertFalse((Path(temp) / "tik-apparel-livestream-editor").exists())
 
 

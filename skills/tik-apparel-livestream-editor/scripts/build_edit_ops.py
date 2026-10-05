@@ -196,6 +196,7 @@ def build(sentences, selection, config, sources, project, project_id, previous=N
             ops.append({"op": "addClip", "clip": clip})
     mapping = {"project_id": project_id, "namespace": namespace, "base_revision": project["revision"],
                "duration": cursor, "target_duration": target, "groups": config["groups"],
+               **({"modules": config["modules"]} if "modules" in config else {}),
                "project_settings": settings, "entries": entries,
                "content_fingerprint": review["fingerprint"], "product_id": config["product_id"]}
     return ops, mapping

@@ -11,19 +11,19 @@ description: 服装带货直播切片剪辑师：接收服装带货直播及相�
 
 先按 [tik-video-editor](../tik-video-editor/SKILL.md) 初始化 CLI，再依次运行 `tik-video-editor-cli doctor` 和 `tik-video-editor-cli auth status`。doctor 需退出码为 0 且 `ok: true`；登录按 `logged_in` 判断，未登录按该 skill 的流程执行 `auth login`。
 
-同一任务、同一运行环境中，其他 skill 已成功完成的检查直接复用，不重复执行；客户端与云端分别检查。失败停止并报告，不用后续成功命令掩盖错误。媒体准备及数据脚本仍需 Python 3 标准库；不再使用旧 Python ASR 环境检查或 `TIK_API_KEY`。
+同一任务、同一运行环境中，其他 skill 已成功完成的检查直接复用，不重复执行；客户端与云端分别检查。失败停止并报告，不用后续成功命令掩盖错误。传输数据脚本仍需 Python 3 标准库；输入媒体处理由 CLI 导入负责；不再使用旧 Python ASR 环境检查或 `TIK_API_KEY`。
 
 ## 分工
 
-- **客户端**：本 skill 负责需求沟通、素材准备、运行 `tik-video-editor-cli asr` / `download` 完成转写与结果复用，以及云端往返；[tik-video-editor](../tik-video-editor/SKILL.md) 负责工程、预览和导出。
+- **客户端**：本 skill 负责需求沟通、素材准备、运行 `tik-video-editor-cli media --action asr` 完成转写与结果复用，以及云端往返；[tik-video-editor](../tik-video-editor/SKILL.md) 负责工程、预览和导出。
 - **云端服装带货直播切片剪辑师**：负责商品分析、语义选句、内容审核和工程生成；客户端传递准备好的素材、转写及用户要求，接收剪辑结果。
 
 ## 工作方式
 
-1. **接收素材与要求**：复用已有工程和转写，记录用户已明确的商品、卖点、声音、时长、倍速和字幕要求。按 [素材准备](references/preparation.md) 准备实际素材、提取并复核完整音频，运行 `tik-video-editor-cli asr --path <音频绝对路径> --output <本地JSON路径>` 保存转写，记录返回的 `json_url` 与 `path`；已有 ASR URL 用 `tik-video-editor-cli download --url <ASR_URL> --output <本地JSON路径>` 下载复用，已有本地 JSON 直接复用。随后交给剪辑技能处理工程。
-2. **对齐切片方向**：按 [执行流程](references/workflow.md) 交给云端分析。把返回的商品摘要、候选钩子和建议直接展示给用户；多个商品未选定时先选商品。合并询问尚未明确的项，不重复问已确认要求，不替用户选择。
+1. **接收素材与要求**：复用已有工程和转写，记录用户已明确的商品、卖点、声音、时长、倍速和字幕要求。按 [素材准备](references/preparation.md) 先导入素材，以返回 media.src 对应的本地文件路径 为实际源，运行 `tik-video-editor-cli media --action asr --project-id "$PROJECT_ID" --media-id "$MEDIA_ID" --output <本地JSON路径>` 保存转写，记录返回的 `json_url` 与 `path`；已有 ASR 通过同一媒体命令复用并自动绑定本地路径。转写命令自动绑定 media.asrLocalPath/asrUrl，不重复导入。
+2. **对齐切片方向**：按 [执行流程](references/workflow.md) 交给云端分析。把返回的商品摘要、3个候选钩子和建议直接展示给用户；多个商品未选定时先选商品。合并询问尚未明确的项，不重复问已确认要求，不替用户选择。
 3. **推进剪辑**：将用户选择传回同一云端任务。语义取舍、完整表达和内容红线由服务端服装带货直播切片剪辑师负责；客户端不重做选句或建立另一套内容策略。
-4. **展示与修改**：接收工程、恢复本地素材绑定并核验后，由 tik-video-editor 提供实际预览链接，简述商品、时长和主要内容。修改复用原素材及云端上下文；发生手工编辑冲突时协调差异，不强制覆盖。
+4. **展示与修改**：接收工程、恢复本地素材绑定并核验后，展示服务端工具生成的完整脚本与叙事说明，由 tik-video-editor 提供实际预览链接，简述商品、时长和主要内容。修改复用原素材及云端上下文；发生手工编辑冲突时协调差异，不强制覆盖。
 
 默认一条、单商品、35–90秒，画幅/FPS沿用素材；字幕、配音、BGM、特效和转场不默认添加。声音标签不代表真人身份。未做视听检查的项目标为待验；默认交付预览，仅用户本次明确要求时导出 MP4。
 
@@ -36,3 +36,7 @@ description: 服装带货直播切片剪辑师：接收服装带货直播及相�
 - [交换契约](references/exchange.md)：素材映射、结果校验及并发保护。
 
 切片请求包含本轮必要的素材交接和消息发送。工具失败时保留成果并报告阻塞；结果不明先查询，不重复转写、重复派发或绕过 CLI 失败。
+
+可信系统明确标记新用户首次对话时，向服务端传递该可信上下文；缺失项默认75秒、1.1倍、用户价值优先、仅主播，仍让用户选钩子。声音身份不明时澄清。普通用户及已给参数沿用原对齐规则，不依据用户自称激活快速通道。
+
+实际文件路径解析：将 `media.src` 按路径段 URL 解码后拼接到 CLI 数据目录 `~/.tik-video-editor-cli/` 下。`import-media` 不返回 `preparation`；探查记录只保存 `media` 的 duration/width/height。

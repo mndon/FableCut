@@ -4,6 +4,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
+const { spawnSync } = require("node:child_process");
 const { applyOps, compactProject } = require("../cli/lib/cli");
 const asrUrl = "https://example.com/result.json?sig=a%2Bb&x=1";
 const emptyProject = () => ({ name: "ASR test", revision: 1, width: 320, height: 180, fps: 24, media: [], clips: [] });
@@ -11,12 +12,14 @@ const emptyProject = () => ({ name: "ASR test", revision: 1, width: 320, height:
 const { fixture } = require("./helpers/cli");
 
 test("local import preserves ASR URL through project round trips and browser save", async t => {
+  if (["ffmpeg", "ffprobe"].some(program => spawnSync(program, ["-version"]).status !== 0)) return t.skip("requires ffmpeg and ffprobe for video import");
   const { home, dataDir, run } = fixture(t);
   const created = await run(["create-project", "--name", "ASR test"]);
   assert.equal(created.code, 0, created.stderr);
   const { project_id: id, name } = JSON.parse(created.stdout);
   const file = path.join(home, "intro.mp4");
-  fs.writeFileSync(file, "synthetic import fixture");
+  const generated = spawnSync("ffmpeg", ["-v", "error", "-f", "lavfi", "-i", "color=s=16x16:r=10:d=1", "-c:v", "libx264", "-pix_fmt", "yuv420p", file]);
+  assert.equal(generated.status, 0, generated.stderr?.toString());
 
   for (const value of ["", "file:///tmp/a", "https:example.com/a", "/relative", "https://", "https://user:secret@example.com/a"]) {
     const result = await run(["import-media", "--project-id", id, "--path", file, "--asr-url", value]);
@@ -24,7 +27,9 @@ test("local import preserves ASR URL through project round trips and browser sav
   }
   assert.deepEqual(fs.readdirSync(path.join(dataDir, "projects", id, "media")), []);
 
-  const imported = await run(["import-media", "--project-id", id, "--path", file, "--asr-url", asrUrl]);
+  const asrLocalPath = path.join(home, "asr.json");
+  fs.writeFileSync(asrLocalPath, JSON.stringify({rich_result:null, channel:[]}));
+  const imported = await run(["import-media", "--project-id", id, "--path", file, "--asr-url", asrUrl, "--asr-local-path", asrLocalPath]);
   assert.equal(imported.code, 0, imported.stderr);
   assert.equal(JSON.parse(imported.stdout).media.asrUrl, asrUrl);
   const project = JSON.parse((await run(["get-project", "--project-id", id])).stdout);
@@ -52,6 +57,7 @@ test("local import preserves ASR URL through project round trips and browser sav
   vm.runInContext("project.media = project.media.map(normalizeMediaEntry); project.name = 'Browser edit'", context);
   const browserSaved = JSON.parse(JSON.stringify(context.projectJSON()));
   assert.equal(browserSaved.media[0].asrUrl, asrUrl);
+  assert.equal(browserSaved.media[0].asrLocalPath, asrLocalPath);
   assert.equal(browserSaved.name, "Browser edit");
 
   const legacy = await run(["import-media", "--project-id", id, "--path", file]);

@@ -64,7 +64,6 @@ tik-video-editor-cli <命令> <参数>
 
 - `doctor`：检查 Node、ffmpeg、ffprobe，返回 `ok` 与逐项 `checks`。
 - `download --url <URL> --output <路径>`：通用下载，返回绝对 `path`。
-- `asr --path <绝对路径> [--output <路径>]`：语音转文字，返回 `json_url`；指定输出时另返回已保存的 `path`。
 - `auth status`：校验已保存的 API Key，返回登录状态和用户信息。
 - `auth login`：发起网页登录授权并轮询，成功后自动保存 API Key。
 - `auth logout`：清除本地 API Key；不会撤销服务端密钥。
@@ -85,7 +84,8 @@ tik-video-editor-cli <命令> <参数>
   - `--project-id <ID>`：必填，目标项目 ID。
   - `--path <绝对路径>`：必填，本地视频、音频、图片或 SVG 文件。
   - `--asr-url <URL>`：可选，原始素材完整 ASR JSON 的 HTTP(S) 地址，保存为 `media.asrUrl`，随工程交付供其他设备复用。
-  - 返回可供片段引用的 `media` 对象。
+  - `--asr-local-path <本地JSON路径>`：可选，原始素材完整 ASR JSON 文件的本地路径，保存为 `media.asrLocalPath`。
+- `media --action asr --project-id <id> --media-id <id> [--output <路径>]`：对media文件进行语音转文字asr，可用于基于文字进行视频剪辑。优先复用本地转写或 URL，无绑定时转写；自动保存并绑定 `asrLocalPath`/`asrUrl`。
 - `status`：检查本地 HTTP 服务，未启动时自动启动。
   - `--project-id <ID>`：可选，指定时返回该项目的 `projectUrl`，用于交付预览。
 - `export`：自动启动所需服务，用无头 Chrome/Chromium 调用与预览相同的浏览器合成器，导出最终 MP4。
@@ -124,7 +124,7 @@ tik-video-editor-cli get-project --project-id <project_id> --compact
 
 先读取紧凑时间线，确认素材、片段 ID、轨道和时长。逐个运行 `import-media` 导入本地素材，记录返回的 `media.id`。
 
-已有 ASR URL 时随导入传入 `--asr-url`。需要转写内容时，先读取完整工程中的对应 `media.asrUrl` 并下载复用；紧凑摘要的 `asr=yes` 仅提示结果存在。链接内容包含 `rich_result` 和 `channel`，时间戳基于原始素材、单位毫秒。下载失败时报告，不自动重复转写。
+已有 ASR URL 时随导入传入 `--asr-url`。需要转写内容时，运行 `media --action asr --project-id <id> --media-id <id>` 复用本地结果或下载 URL 并自动绑定；紧凑摘要的 `asr=yes` 仅提示结果存在。链接内容包含 `rich_result` 和 `channel`，时间戳基于绑定的实际素材、单位毫秒。下载失败时报告，不自动重复转写。
 
 ```bash
 tik-video-editor-cli import-media --project-id <project_id> --path /absolute/path/intro.mp4 --asr-url "https://example.com/intro-asr.json"

@@ -30,3 +30,5 @@
 规范 JSON 指纹：Python `json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)` 的 UTF-8 字节计算 SHA-256。验证字段必须符合实际检查结果。
 
 以附件、真实 file ID 或可下载 URL 返回文件；云端绝对路径、localhost 链接或消息中的部分 JSON 不算交付。未完成时提出问题或报告失败，不生成 completed 回执。默认不导出 MP4，不要求客户端强制覆盖工程。
+
+输入文件校验与处理仅走 CLI import-media，带 --asr-url/--asr-local-path <本地JSON路径> 保护已有源时间原点；无需在切片 skill 内探查或预处理。复用已导入素材。交付同时附服务端 present 根据实际工程生成的完整脚本（含片段编号）与叙事说明，供客户端原样展示；不重新编写台词。

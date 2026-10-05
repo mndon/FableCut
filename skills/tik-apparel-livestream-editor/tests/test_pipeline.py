@@ -325,7 +325,7 @@ class EditTests(unittest.TestCase):
             self.assertEqual(v["clip"]["duration"], t["clip"]["duration"])
         text = render(self.s, self.cfg, self.sel, project=actual, mapping=mapping, content=self.content)
         self.assertIn("衣服", text)
-        rows = [line for line in text.splitlines() if line.startswith("| 3 |")]
+        rows = [line for line in text.splitlines() if "| 3 | s1 " in line]
         self.assertEqual(len(rows), 2)
         self.assertTrue(rows[0].endswith("衣服 |"))
         self.assertTrue(rows[1].endswith("舒服 |"))

@@ -1,9 +1,11 @@
 """Local candidate query, timing, editorial review and media-ID binding."""
 import argparse
 import json
+from pathlib import Path
+from urllib.parse import unquote
 
 from build_edit_ops import refined_parts
-from common import (MODULES, TRANSITIONS, main_guard, number, read_json, selected_units,
+from common import (modules_for, duration_ratio, TRANSITIONS, main_guard, number, read_json, selected_units,
                     unique_map, validate_selection, write_json)
 from editorial import review_draft, validate_review
 
@@ -38,7 +40,7 @@ def estimate(sentences, selection, config, content):
         raise ValueError("Transition windows consume a short clip")
     total = sum(d for _, d in durations) - overlap * (len(durations) - 1)
     modules = {m["key"]: sum(d - (overlap if pos else 0) for pos, (i, d) in enumerate(durations)
-                            if i in config["groups"][m["key"]]) for m in MODULES}
+                            if i in config["groups"][m["key"]]) for m in modules_for(config)}
     return {"duration": round(total, 3), "target_delta": round(total - target, 3),
             "in_range": 35 <= total <= 90, "modules": {k: round(v, 3) for k, v in modules.items()},
             "units": {k: len(selected_units(sentences, content, ids, config["product_id"]))
@@ -54,6 +56,18 @@ def bind_media(sources, source_id, imported):
         raise ValueError("Source already bound to another media ID; reconcile explicitly")
     if "asr_url" in source and source["asr_url"] != media.get("asrUrl"):
         raise ValueError("Imported media ASR URL differs from source.asr_url")
+    if media.get("src"):
+        parts = [unquote(part) for part in media["src"].split("/")]
+        if (len(parts) != 5 or parts[:2] != ["", "projects"] or parts[3] != "media"
+                or parts[2] != imported.get("project")
+                or any(not part or part in (".", "..") or "/" in part or "\\" in part or ":" in part
+                       for part in (parts[2], parts[4]))):
+            raise ValueError("Need project-local media.src from import-media")
+        if source.get("path"):
+            source.setdefault("original_path", source["path"])
+        source["path"] = str(Path.home().joinpath(".tik-video-editor-cli", *parts[1:]))
+        if source.get("probe"):
+            write_json(source["probe"], {key: media[key] for key in ("duration", "width", "height") if key in media})
     source["media_id"] = media["id"]
     return sources
 
@@ -72,11 +86,26 @@ def main():
             p.add_argument("--" + name, required=True)
         if command == "check-review":
             p.add_argument("--review", required=True)
+    ratio = sub.add_parser("duration-ratio")
+    ratio.add_argument("--sources", required=True)
+    ratio.add_argument("--target-seconds", required=True, type=float)
+    ratio.add_argument("--speed", required=True, type=float)
     b = sub.add_parser("bind-media")
     for name in ("sources", "source-id", "import-result"):
         b.add_argument("--" + name, required=True)
     args = parser.parse_args()
-    if args.command == "bind-media":
+    if args.command == "duration-ratio":
+        sources = read_json(args.sources)["sources"]
+        total = 0
+        for source in sources:
+            probe = read_json(source["probe"])
+            start, end = source.get("range", [0, probe["duration"]])
+            start, end = number(start, "range.start"), number(end, "range.end")
+            if end <= start or end > probe["duration"] + 0.001:
+                raise ValueError("Invalid source range")
+            total += end - start
+        result = duration_ratio(total, args.target_seconds, args.speed)
+    elif args.command == "bind-media":
         result = bind_media(read_json(args.sources), args.source_id, read_json(args.import_result))
         write_json(args.sources, result)
         result = {"source_id": args.source_id, "bound": True}

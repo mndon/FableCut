@@ -2,7 +2,7 @@
 import argparse
 
 from build_edit_ops import check_project_mapping, refined_parts
-from common import MODULES, main_guard, number, read_json, selected_units, unique_map, validate_selection
+from common import modules_for, main_guard, number, read_json, selected_units, unique_map, validate_selection
 from editorial import fingerprint
 
 
@@ -18,6 +18,7 @@ def render_index(sentences):
 
 def render(sentences, config=None, selection=None, hook=None, speed=None, project=None, mapping=None, label=None, content=None):
     indexed = unique_map(sentences["sentences"], "index")
+    modules = modules_for(config)
     if hook is not None:
         if not hook or len(set(hook)) != len(hook) or any(i not in indexed for i in hook):
             raise ValueError("Hook indices must be nonempty, valid and unique")
@@ -25,11 +26,13 @@ def render(sentences, config=None, selection=None, hook=None, speed=None, projec
             raise ValueError("Hook contains out-of-range material")
         if content is not None:
             units = selected_units(sentences, content, hook, config["product_id"])
-            rule = next(m for m in MODULES if m["key"] == "hook")
-            if hook != sorted(hook) or not rule["min"] <= len(units) <= rule["max"]:
+            rule = next(m for m in modules if m["key"] == "hook")
+            if hook != sorted(hook) or not (2 <= len(units) <= 5 if "modules" in config else rule["min"] <= len(units) <= rule["max"]):
                 raise ValueError("Hook must use the allowed number of source-ordered semantic units")
         if config and config.get("allowed_speakers") and any(indexed[i]["speaker_id"] not in config["allowed_speakers"] for i in hook):
             raise ValueError("Hook conflicts with retained speakers")
+        if config and "modules" in config and any(indexed[i]["speaker_id"] not in config.get("host_speakers", []) for i in hook):
+            raise ValueError("Hook must contain confirmed host speakers only")
         groups = {"hook": hook}
         if project is not None or mapping is not None:
             raise ValueError("Project mapping is for full script display")
@@ -38,6 +41,7 @@ def render(sentences, config=None, selection=None, hook=None, speed=None, projec
         groups = config["groups"]
         speed = number(config["speed"], "speed", 0.25, 4)
     rows = {}
+    segments = {}
     if (project is None) != (mapping is None):
         raise ValueError("--project and --mapping must be supplied together")
     if project is not None:
@@ -46,10 +50,13 @@ def render(sentences, config=None, selection=None, hook=None, speed=None, projec
         if mapping["groups"] != groups:
             raise ValueError("Current groups differ from the submitted mapping")
         actual = check_project_mapping(project, mapping)
+        segment_number = 0
         for entry in mapping["entries"]:
             expected = entry["clip"]
             if expected["kind"] != "video":
                 continue
+            segment_number += 1
+            segments.setdefault(entry["index"], []).append(segment_number)
             clip = actual[expected["id"]]
             rows.setdefault(entry["index"], []).append((entry["source_id"], clip["in"],
                 clip["in"] + clip["duration"] * clip["props"]["speed"],
@@ -61,7 +68,7 @@ def render(sentences, config=None, selection=None, hook=None, speed=None, projec
         cursor = 0.0
         transition = (config or {}).get("transition", {"type": "none"})
         overlap = 0 if transition["type"] == "none" else number(transition.get("duration", 0.3), "transition.duration")
-        for module in MODULES:
+        for module in modules:
             for index in groups.get(module["key"], []):
                 s = indexed[index]
                 parts = refined_parts(s, (config or {}).get("refinements", {}))
@@ -77,18 +84,21 @@ def render(sentences, config=None, selection=None, hook=None, speed=None, projec
         title = "钩子候选" if hook is not None else "成片脚本草案"
         title += f"（{agreed_speed:g}x 预计时间）" if agreed_speed else "（倍速待定，暂不计算成片时间）"
     output = [title, ""]
-    for module in MODULES:
+    for module in modules:
         indices = groups.get(module["key"], [])
         if not indices:
             continue
         suffix = f"｜{cell(label)}" if label and hook is not None else ""
+        segment_header = " 片段 |" if project is not None else ""
+        segment_separator = " --- |" if project is not None else ""
         output.extend([f"### {module['title']}{suffix}", "",
-                       "| 编号 | 源时间 | 秒 | 成片时间 | 文本 |",
-                       "| --- | --- | --- | --- | --- |"])
+                       f"|{segment_header} 编号 | 源时间 | 秒 | 成片时间 | 文本 |",
+                       f"|{segment_separator} --- | --- | --- | --- | --- |"])
         for index in indices:
-            for source, start, end, begin, finish, text in rows[index]:
+            for part, (source, start, end, begin, finish, text) in enumerate(rows[index]):
                 timing = "待定" if begin is None else f"{begin:.3f}–{finish:.3f}"
-                output.append(f"| {index} | {cell(source)} {start:.3f}–{end:.3f} | {end-start:.3f} | {timing} | {cell(text)} |")
+                segment = f" {segments[index][part]} |" if project is not None else ""
+                output.append(f"|{segment} {index} | {cell(source)} {start:.3f}–{end:.3f} | {end-start:.3f} | {timing} | {cell(text)} |")
         output.append("")
     return "\n".join(output).rstrip()
 

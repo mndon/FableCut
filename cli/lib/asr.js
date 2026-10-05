@@ -4,6 +4,7 @@ const os = require("os");
 const path = require("path");
 const { createHash } = require("crypto");
 const { spawn } = require("child_process");
+const { inspect: inspectVideo } = require("./import-video");
 const { OpenAPIAuth } = require("./auth");
 const { withDeadline } = require("./operation");
 const { downloadFile, httpURL, outputPath } = require("./download");
@@ -134,9 +135,13 @@ async function runAsr(options, { auth = new OpenAPIAuth({ apiURL: options["api-u
   try {
     let audio = source;
     if (VIDEO.has(extension)) {
+      const video = await inspectVideo(source, async (program, args, settings) => ({ output: await command(program, args, settings?.timeout, signal) }), { colors: false });
+      if (!video.audio.length) throw new Error("ASR requires a speech audio stream");
       temporary = fs.mkdtempSync(path.join(os.tmpdir(), "tik-video-editor-cli-asr-"));
       audio = path.join(temporary, path.parse(source).name + ".mp3");
       await command("ffmpeg", ["-nostdin", "-v", "error", "-y", "-i", source, "-map", "0:a:0", "-vn", "-ac", "1", "-ar", "16000", "-c:a", "libmp3lame", "-q:a", "4", audio], 1800000, signal);
+      const extracted = JSON.parse(await command("ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "json", audio], 60000, signal));
+      if (!Number.isFinite(Number(extracted.format?.duration)) || Math.abs(Number(extracted.format.duration) - video.duration) > 0.5) throw new Error("Extracted audio/video durations differ by >0.5s; check the imported source");
     }
     result = await transcribe(audio, client, { signal });
   } finally { if (temporary) fs.rmSync(temporary, { recursive: true, force: true }); }

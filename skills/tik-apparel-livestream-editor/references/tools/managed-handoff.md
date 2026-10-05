@@ -9,14 +9,14 @@
 1. 挂载输入默认位于 `/mnt/session/uploads/tik-slicer/input/`；以当轮消息提供的真实路径为准。request.protocol 必须为 `tik-video-semantic-slicer-connector/v1`。核对 project.json 的规范 JSON SHA-256 等于 request.project_sha256（算法见下方）；不匹配就停止。
 2. 保存不可变输入副本和 run_id。project 是 tik-video-editor-cli 原生时间线，不是 Managed Agent 的 IaC project 配置。request.requirements 是用户需求；sources 按稳定 source ID 对应 media_id，可含准备后源秒范围。
 3. 按 media.src 下载/读取实际素材，逐个核对二进制 SHA-256 与 request.sources[].sha256。已有挂载文件不需要下载。本地使用独立工作目录，不能改挂载原件。素材不可达/不匹配就报告，不下载另一份原视频凑合。
-4. 客户端已做归一化与 ASR，**不再归一化、转码、裁头、补静音或重新转写**。读取已安装 slicer 的准备契约，用 `probe_video.py` 只读探查；素材时间不满足契约则返回客户端处理。复用 media.asrUrl 下载原始 rich_result/channel JSON；失败/空结果报告，不检查 ASR 凭据、不重转。
-5. 用这些云端本地路径创建 sources.json，保留 request 中的 source ID、range、media_id、asr_url；probe/transcript 指向实际云端文件。首次构建完整稳定索引，续接原会话沿用原索引与内容标注。新的 run_id 不意味着必须重建相同素材的索引。
+4. 客户端已做媒体准备与 ASR，不再改变源时间原点或重新转写。创建云端独立工作工程，通过 CLI import-media（--asr-url 或 --asr-local-path <本地JSON路径>）校验，使用返回 media 中的 duration/width/height 及由 media.src 解析的实际文件路径；需要改变源时间原点时返回客户端处理。仅保持时间对应关系的封装/编码转换可由 CLI 完成，不在 skill 内探查。复用 media.asrUrl 下载原始 rich_result/channel JSON；失败/空结果报告，不检查 ASR 凭据、不重转。
+5. 用这些云端本地路径创建 sources.json，保留 request 中的 source ID、range、asr_url；sources.media_id 使用导入返回的云端真实 ID，另存输入 media_id ↔ 云端 media_id 显式映射；probe/transcript 指向实际云端文件。首次构建完整稳定索引，续接原会话沿用原索引与内容标注。新的 run_id 不意味着必须重建相同素材的索引。
 
 ## 语义剪辑
 
 执行 slicer 的商品划分、完整语义组、内容策略、红线、钩子和审核步骤。用户已确认的要求不重复询问；未定商品、声音或钩子就将摘要/选项返回客户端，等待用户答复。不能为了无人交互静默选第一款或把助播当主播。
 
-仍通过 tik-video-editor 的 CLI 建云端独立工作工程、导入实际下载素材、生成 patch、读回并执行 verify_output。导入会生成云端 media ID，保存显式映射 `输入 media_id ↔ 云端 media_id`；sources 和 submitted_mapping 使用实际云端 ID。云端工作工程不能被客户端 revision 覆盖。
+仍通过 tik-video-editor 的 CLI 建云端独立工作工程、复用接收阶段已导入的素材、生成 patch、读回并执行 verify_output。导入会生成云端 media ID，保存显式映射 `输入 media_id ↔ 云端 media_id`；sources 和 submitted_mapping 使用实际云端 ID。云端工作工程不能被客户端 revision 覆盖。
 
 继续保留 sources、sentences、content、selection、config、review、submitted_mapping；它们是下一轮修改的必要上下文。没有视听能力则标为 pending，不把结构验证当作试听。此次交接模式默认不启动供客户端使用的云端预览、不导出 MP4。
 
@@ -49,6 +49,6 @@
        json.dump(result, output, ensure_ascii=False, indent=2, allow_nan=False)
    ```
 
-5. 使用当前运行环境支持的附件交付能力，交付 **可下载**的 project.json 和 result.json，附本轮 run_id 与简短结果/待验说明。服务器本地路径、消息中的 JSON 片段、localhost 预览链接都不能替代实际可下载文件。若环境无法提供附件或已授权存储，明确报告传输阻塞，不声称客户端已同步。
+5. 在工作工程上用 present --project/--mapping 渲染完整脚本，含片段编号，附主线与叙事说明；随文件回传给客户端，不手写脚本。使用当前运行环境支持的附件交付能力，交付 **可下载**的 project.json 和 result.json，附本轮 run_id 与简短结果/待验说明。服务器本地路径、消息中的 JSON 片段、localhost 预览链接都不能替代实际可下载文件。若环境无法提供附件或已授权存储，明确报告传输阻塞，不声称客户端已同步。
 
 客户端负责恢复本地绑定、处理并发修改、提交并展示本地预览。服务器不得发送要求客户端 --force 覆盖工程的指令。

@@ -1,6 +1,7 @@
 """Local data helpers only; no ASR client or tik-video-editor-cli transport."""
 import json
 import math
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -10,6 +11,36 @@ MODULES = json.loads((Path(__file__).parent / "modules.json").read_text(encoding
 TRANSITIONS = {"none", "fade", "zoom", "iris", "spin", "blur", "whip", "glitch", "pop"}
 TRANSITIONS.update(f"{kind}-{direction}" for kind in ("slide", "wipe")
                    for direction in ("left", "right", "up", "down"))
+
+
+def modules_for(config=None):
+    modules = (config or {}).get("modules", MODULES)
+    if not isinstance(modules, list) or not modules:
+        raise ValueError("modules must be a nonempty ordered list")
+    keys = []
+    for module in modules:
+        if not isinstance(module, dict):
+            raise ValueError("Module must be an object")
+        key = module.get("key")
+        if not isinstance(key, str) or not re.fullmatch(r"[a-z][a-z0-9_-]*", key) or not str(module.get("title", "")).strip():
+            raise ValueError("Module needs identifier key and title")
+        keys.append(key)
+    if len(set(keys)) != len(keys) or keys[0] != "hook":
+        raise ValueError("Unique modules must start with hook")
+    return modules
+
+
+def duration_ratio(source, target, speed):
+    source = number(source, "source duration", 0.001)
+    target = number(target, "target duration", 35, 90)
+    speed = number(speed, "speed", 0.25, 4)
+    insufficient = source < target * speed
+    overlong = source > 7200
+    return {"source": source, "target": target, "speed": speed,
+            "max_output": source / speed, "R_material": source / target,
+            "R_fill": source / (target * speed), "insufficient": insufficient,
+            "overlong": overlong, "tight": not insufficient and not overlong and source / target < 8,
+            "block": insufficient}
 
 
 def validate_channels(value, rich):
@@ -63,19 +94,31 @@ def validate_selection(sentences, selection, config, content=None):
         raise ValueError("Selection indices must be unique integers")
     groups = config["groups"]
     ordered = []
-    for module in MODULES:
+    modules = modules_for(config)
+    if set(groups) != {m["key"] for m in modules}:
+        raise ValueError("groups must match the module keys")
+    for module in modules:
         group = groups[module["key"]]
-        count = len(group) if content is None else len(selected_units(sentences, content, group, config["product_id"]))
-        # Legacy snapshots used phrase counts; require semantic units for new patches.
-        lo, hi = (module["min"], module["max"]) if content is not None else {"hook": (2, 5), "value": (0, None), "close": (2, 3)}[module["key"]]
-        if count < lo or (hi is not None and count > hi):
-            raise ValueError(f"Module semantic unit count: {module['key']}")
+        units = selected_units(sentences, content, group, config["product_id"]) if content is not None else group
+        if "modules" in config:
+            if not group or (module["key"] == "hook" and not 2 <= len(units) <= 5):
+                raise ValueError("Hook needs 2–5 complete expressions; modules must be nonempty")
+        else:
+            # Existing runs retain their original group-count contract.
+            lo, hi = (module["min"], module["max"]) if content is not None else {"hook": (2, 5), "value": (0, None), "close": (2, 3)}[module["key"]]
+            if len(units) < lo or (hi is not None and len(units) > hi):
+                raise ValueError(f"Module semantic unit count: {module['key']}")
         ordered.extend(group)
     if ordered != indices:
         raise ValueError("Module concatenation must exactly equal keep_indices, including order")
-    for key in ("hook", "value"):
-        if groups[key] != sorted(groups[key]):
-            raise ValueError(f"{key} must follow source order")
+    if groups["hook"] != sorted(groups["hook"]):
+        raise ValueError("hook must follow source order")
+    if "modules" not in config and groups["value"] != sorted(groups["value"]):
+        raise ValueError("value must follow source order")
+    if "modules" in config:
+        speakers = config.get("host_speakers", [])
+        if not speakers or any(indexed.get(i, {}).get("speaker_id") not in speakers for i in groups["hook"]):
+            raise ValueError("Hook must contain confirmed host speakers only")
     allowed = config.get("allowed_speakers")
     if not isinstance(allowed, list) or not allowed:
         raise ValueError("allowed_speakers must explicitly list the retained source-scoped speaker IDs")

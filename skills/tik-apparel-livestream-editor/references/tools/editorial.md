@@ -1,6 +1,6 @@
 # 内容审核与视听验收
 
-商品标注、完整语义组写入 content.json；格式见 pipeline-io.md。先用 selection_tools.py estimate 试算，再渲染草稿审核，不必先建远端工程。
+商品标注、完整语义组写入 content.json；格式见 pipeline-io.md。钩子候选展示前逐项审核商品、主播身份、原话、连续性、承诺和内容红线，未通过不展示；此时不提前完成整片分组。完整方案定稿后再做下方全片审核。先用 selection_tools.py estimate 试算，再渲染草稿审核，不必先建远端工程。
 
 ## 审核记录
 
@@ -15,7 +15,7 @@ python3 "$SKILL_DIR/scripts/selection_tools.py" review-draft --sentences "$RUN_D
 | product | 同款身份、换款边界、跨段属性归属 |
 | meaning | 整组主干完整、前后依赖/指代、跳接与收束 |
 | repetition | 相邻及全片表达是否有信息增量 |
-| hook | 所选声音兼容、开头承诺及后续承接 |
+| hook | 已确认主播原话、2–5完整表达、同语境连续性、最强开头与后续1–2句承诺兑现 |
 | constraints | 价格/直播话术/第三方名称、品牌红线、用户排除项 |
 | speech | 口吃、疑似转写错误及复听或换句结果 |
 

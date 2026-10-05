@@ -154,3 +154,65 @@ class EditorialTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class DynamicModuleTests(unittest.TestCase):
+    def setUp(self):
+        self.s, self.sel, self.cfg, self.sources, self.project = fixture()
+        self.content = content_fixture()
+        self.cfg.update(modules=[{"key": "hook", "title": "钩子"}, {"key": "fit", "title": "上身"}, {"key": "fabric", "title": "面料"}],
+                        host_speakers=["s1:0"], groups={"hook": [0, 1, 2, 3], "fit": [6, 7], "fabric": [4, 5]})
+        self.sel["keep_indices"] = [0, 1, 2, 3, 6, 7, 4, 5]
+
+    def test_reordering_preserves_units_and_actual_segment_numbers(self):
+        ops, mapping = build(self.s, self.sel, self.cfg, self.sources, self.project, "test",
+                             content=self.content, review=reviewed(self.s, self.sel, self.cfg, self.content))
+        timing = estimate(self.s, self.sel, self.cfg, self.content)
+        self.assertEqual(list(timing["modules"]), ["hook", "fit", "fabric"])
+        self.assertAlmostEqual(timing["duration"], mapping["duration"], places=3)
+        text = render(self.s, self.cfg, self.sel, project=apply_ops(self.project, ops), mapping=mapping, content=self.content)
+        self.assertIn("| 片段 | 编号 |", text)
+        self.assertLess(text.index("### 上身"), text.index("### 面料"))
+        self.assertIn("| 5 | 6 |", text)
+
+    def test_host_only_and_whole_expression_hook(self):
+        self.cfg["host_speakers"] = ["s2:0"]
+        with self.assertRaisesRegex(ValueError, "host"):
+            estimate(self.s, self.sel, self.cfg, self.content)
+        with self.assertRaisesRegex(ValueError, "host"):
+            render(self.s, config=self.cfg, hook=[0, 1, 2, 3], content=self.content)
+        self.cfg["host_speakers"] = ["s1:0"]
+        with self.assertRaisesRegex(ValueError, "allowed number"):
+            render(self.s, config=self.cfg, hook=[0, 1], content=self.content)
+
+    def test_module_order_invalidates_review_and_unknown_module_is_rejected(self):
+        review = reviewed(self.s, self.sel, self.cfg, self.content)
+        self.cfg["modules"][1]["title"] = "效果"
+        with self.assertRaisesRegex(ValueError, "stale"):
+            validate_review(self.s, self.sel, self.cfg, self.content, review)
+        self.cfg["groups"]["unknown"] = []
+        with self.assertRaisesRegex(ValueError, "module keys"):
+            estimate(self.s, self.sel, self.cfg, self.content)
+
+    def test_import_media_binds_actual_file_and_probe(self):
+        with tempfile.TemporaryDirectory() as root:
+            sources = {"sources": [{"id": "s1", "path": "/original.mp4", "probe": str(Path(root, "video_info.json"))}]}
+            imported = {"ok": True, "project": "test", "media": {"id": "actual", "kind": "video",
+                        "src": "/projects/test/media/actual%20file.mp4", "duration": 90, "width": 720, "height": 1280}}
+            bound = bind_media(sources, "s1", imported)["sources"][0]
+            self.assertEqual(bound["path"], str(Path.home() / ".tik-video-editor-cli/projects/test/media/actual file.mp4"))
+            self.assertEqual(bound["original_path"], "/original.mp4")
+            self.assertEqual(bound["media_id"], "actual")
+            self.assertEqual(json.loads(Path(bound["probe"]).read_text())["duration"], 90)
+            imported["media"]["src"] = "/projects/test/media/%2e%2e"
+            with self.assertRaisesRegex(ValueError, "project-local"):
+                bind_media(sources, "s1", imported)
+
+    def test_duration_ratio_boundaries(self):
+        from common import duration_ratio
+        self.assertTrue(duration_ratio(59.9, 60, 1)["insufficient"])
+        self.assertFalse(duration_ratio(60, 60, 1)["insufficient"])
+        self.assertTrue(duration_ratio(479.9, 60, 1)["tight"])
+        self.assertFalse(duration_ratio(480, 60, 1)["tight"])
+        self.assertFalse(duration_ratio(7200, 60, 1)["overlong"])
+        self.assertTrue(duration_ratio(7200.1, 60, 1)["overlong"])
+        self.assertTrue(duration_ratio(60, 60, 1.1)["insufficient"])

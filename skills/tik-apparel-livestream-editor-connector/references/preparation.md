@@ -1,42 +1,37 @@
 # 素材准备
 
-本 skill 只内置音视频对齐与探查工具，避免客户端依赖服务端切片 skill。转写与下载直接运行 `tik-video-editor-cli asr` / `download`，工程操作按 [tik-video-editor](../../tik-video-editor/SKILL.md) 执行；复用本任务已通过的 doctor 与 auth status。
+输入文件校验、原点对齐、重封装及转码全部由 tik-video-editor-cli import-media 完成。本 skill 只负责工程和传输数据，不内置媒体预处理工具，也不调用 ffprobe/ffmpeg。复用本任务当前环境已通过的 doctor/auth status。
 
-CONNECTOR_DIR 为本 skill 的绝对目录。为每轮建立独立 RUN_DIR，素材中间数据放 intermediate/s1、s2 等目录，保留原文件。准备工具需 Python 3 标准库和 ffprobe/ffmpeg。
-
-## 统一实际素材
+每轮建立独立 RUN_DIR，中间记录放 intermediate/s1、s2 等目录。先按 [tik-video-editor](../../tik-video-editor/SKILL.md) 创建或选择工程，再导入：
 
 ```bash
-python3 "$CONNECTOR_DIR/scripts/prepare_video.py" "$INPUT_VIDEO" --out-dir "$RUN_DIR/intermediate/s1"
+tik-video-editor-cli import-media --project-id "$PROJECT_ID" --path "$INPUT_VIDEO"
 ```
 
-以 preparation.json 的 `path` 为后续转写、上传和导入的唯一素材，`probe` 指向 video_info.json。不要假定总会生成 prepared.mp4。
+保存完整返回值为 import.json，以 media.src 对应的本地文件路径 为转写、上传及哈希计算的唯一实际文件，media 中的 duration/width/height 为探查数据，media.id 为真实素材 ID。CLI 会将合规视频直接复制到项目目录，其他视频优先复制视频流，仅必要时转码。原文件保留，失败停止，不执行替代准备。
 
-起点对齐的素材直接复用；否则复制视频流并裁去过早音频或补静音，统一到视频原点，尾部对齐。失败停止，不回退视频重编码。已有 ASR/工程的素材在独立检查目录加 `--existing-asr`，需要改变素材时拒绝；不能给旧 ASR 静默换源。
+已有本地 ASR 时加 --asr-local-path <本地JSON路径>，有 URL 时加 --asr-url；需要改变源时间原点时 CLI 拒绝。已注册的工程素材直接复用 ID、实际文件和 asrUrl，不重新导入。旧工程缺少准备依据时，通过独立 CLI 工程、启用已有 ASR 保护校验，不能静默换源。
 
-## 衔接转写
+## 获取转写
 
-优先复用与实际素材绑定的本地 JSON 或 `media.asrUrl`；下载使用 `tik-video-editor-cli download --url "$ASR_URL" --output "$RUN_DIR/intermediate/s1/audio.json"`。download 不校验 ASR 格式，确认结果包含 rich_result 和 channel，服务端数据脚本进一步校验。下载失败或空 ASR 不自动重转，声音 ID 不认定真人。
+通过下方媒体命令复用本地结果或下载已有 URL，CLI 校验 rich_result/channel；服务端数据脚本进一步检查。空结果不发起选句，下载失败不重转，声音标签不是人物身份。
 
-仅需新转写时，复用本任务已通过的环境与登录检查；尚未检查则运行 `tik-video-editor-cli doctor` 和 `tik-video-editor-cli auth status`，doctor 需退出码为 0 且 `ok: true`。未登录（`logged_in: false`）时运行 `tik-video-editor-cli auth login`，提供授权链接并等待用户登录成功；失败停止并报告。将 preparation.json 的 `path` 设为 `SOURCE_PATH`，提取完整音频并校验，保留补入的静音：
+需要新转写时对导入后的实际视频调用：
 
 ```bash
-ffmpeg -nostdin -v error -n -i "$SOURCE_PATH" -map 0:a:0 -vn -ac 1 -ar 16000 -c:a libmp3lame -q:a 4 "$RUN_DIR/intermediate/s1/audio.mp3"
-python3 "$CONNECTOR_DIR/scripts/probe_video.py" "$SOURCE_PATH" --audio "$RUN_DIR/intermediate/s1/audio.mp3" --out "$RUN_DIR/intermediate/s1/audio_info.json"
+tik-video-editor-cli media --action asr --project-id "$PROJECT_ID" --media-id "$MEDIA_ID" --output "$RUN_DIR/intermediate/s1/audio.json"
 ```
 
-每条命令单独检查退出码。探查通过后直接运行 `tik-video-editor-cli asr` 完成转写，`--output` 同时下载并保存原始 JSON：
+CLI 负责完整音频提取、输出校验和临时文件清理。保存返回的真实 json_url 与 path；转写成功但保存失败时，再次运行同一媒体命令恢复下载与绑定，不重复转写。
 
-```bash
-tik-video-editor-cli asr --path "$RUN_DIR/intermediate/s1/audio.mp3" --output "$RUN_DIR/intermediate/s1/audio.json"
-```
+CLI 自动保存 media.asrLocalPath/asrUrl；失败停止，不重复导入。后续读取完整 client-project.json，以首个实际源的宽高/FPS设置工程。
 
-保存返回的真实 `json_url` 与本地 `path`，成功后清理本轮临时 MP3。转写成功但下载失败时复用错误中的 URL，以 download 重试。客户端不分句重编号或判断商品，交给服务端处理。
+## 上传与绑定
 
-## 衔接工程与上传
+按 [交换契约](exchange.md) 建立稳定 source ID、真实 media ID、导入后文件完整字节 SHA-256 和云端可读地址。只上传 media.src 对应的本地文件路径 指向的文件，不以原文件地址代替处理结果。仅有本地 ASR 时先取得授权的可访问 URL。没有上传位置则保留成果并询问，不伪造地址。
 
-使用 tik-video-editor 新建本轮准备工程或复用明确指定的工程。画幅/FPS 取首个实际源的探查值；导入 preparation.path 并绑定对应 ASR URL，保存真实 media.id，读取完整 client-project.json。
+用户范围只限制候选，不在准备时裁剪；范围基于导入后源秒，原文件时间须根据导入记录的原点换算。后续不再次补偿偏移，也不跨文件累计源时间。
 
-按 [交换契约](exchange.md) 建立稳定 s1、s2 等源编号、media ID、准备后视频完整字节 SHA-256 和云端可读地址。只有本地 ASR JSON 时需先取得授权的可访问 URL。没有可用上传位置则保留准备成果并询问，不伪造地址。
+媒体转写统一使用 `media --action asr --project-id <id> --media-id <id>`。将导入返回的 `media.id` 保存为 `$MEDIA_ID`，工程 ID 保存为 `$PROJECT_ID`。命令优先复用有效 `media.asrLocalPath`，其次下载 `media.asrUrl`，无绑定才新转写；默认保存至工程 analysis/asr/，可用 --output 指定未占用路径。转写成功但下载失败时 URL 已保存，再次运行同一媒体命令继续下载，不重新转写。只有本地结果时 json_url 可缺省，不伪造 URL。新结果自动绑定，不再手动替换工程；跨设备本地路径不可用时按 URL 恢复。
 
-用户时间范围只限制候选，不先裁剪素材。范围基于准备后源秒；若用户时间来自原文件，先核对原点再换算。后续不重复加减归一化偏移、不跨文件累计源时间。
+实际文件路径解析：将 `media.src` 按路径段 URL 解码后拼接到 CLI 数据目录 `~/.tik-video-editor-cli/` 下。`import-media` 不返回 `preparation`；探查记录只保存 `media` 的 duration/width/height。

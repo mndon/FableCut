@@ -4,10 +4,10 @@
 
 ## 1. 客户端准备
 
-1. 建立独立 run 目录，记录用户原始要求。按 [素材准备](preparation.md) 执行 `prepare_video.py`，以 preparation.json 的 `path` 为后续唯一素材。已有 ASR/工程保持原绑定，需要归一化时停止并说明，不能给旧 ASR 换素材。
-2. 按 [素材准备](preparation.md) 提取并复核完整音频，运行 `tik-video-editor-cli asr --path <音频绝对路径> --output <本地JSON路径>`，记录返回的 `json_url` 与 `path`；已有 ASR URL 用 `tik-video-editor-cli download --url <ASR_URL> --output <本地JSON路径>` 下载，已有本地 JSON 直接复用。下载失败不重转，空 ASR 不发起选句。客户端不重建语义索引；首次全量索引由服务端创建并持久保留。
+1. 建立独立 run 目录，记录用户原始要求。按 [素材准备](preparation.md) 创建/选择工程并执行 CLI import-media，以返回 media.src 对应的本地文件路径 为后续唯一素材。已有 ASR/工程保持原绑定，需要归一化时停止并说明，不能给旧 ASR 换素材。
+2. 按 [素材准备](preparation.md) 直接运行 `tik-video-editor-cli media --action asr --project-id "$PROJECT_ID" --media-id "$MEDIA_ID" --output <本地JSON路径>`，记录返回的 `json_url` 与 `path`；已有 ASR 通过同一媒体命令复用，自动保存本地路径绑定。下载失败不重转，空 ASR 不发起选句。客户端不重建语义索引；首次全量索引由服务端创建并持久保留。
 3. 将已知商品、声音范围、内容方向、时长、倍速、字幕和原视频时间范围写入 requirements.json。未知项保留未知；需要结合 ASR 才能提出的商品/钩子问题由服务端返回，客户端原样展示并收集回答，不替用户选择。
-4. 用 `tik-video-editor-cli` 新建本轮专用准备工程，设置实际画幅/FPS，导入准备后的素材及其 `--asr-url`。已有工程可复用，但先确认目标和范围，不能把无关素材/片段整体发给服务端。保存完整 `get-project` 快照，不能使用 compact 输出代替。
+4. 复用步骤1的准备工程和素材ID，按实际画幅/FPS设置工程，转写命令自动保存 media.asrLocalPath/asrUrl，不重复导入。已有工程可复用，但先确认目标和范围，不能把无关素材/片段整体发给服务端。保存完整 `get-project` 快照，不能使用 compact 输出代替。
 5. 按 [工程交换契约](exchange.md) 准备 bindings.json：每个实际素材有固定 source ID、真实 media ID、准备后文件 SHA-256 和云端可访问地址。大视频通过已有或用户指定的对象存储提供；不把 localhost、电脑绝对路径或原视频地址冒充准备后素材地址。没有可用传输位置时保留本地准备成果，询问上传位置。
 
 ## 2. 导出与发起会话
@@ -26,7 +26,7 @@ python3 "$CONNECTOR_DIR/scripts/exchange.py" export \
 ## 3. 等待与往返问答
 
 - 读取 SSE 或分页事件，保留原始 cursor/event ID 去重；每次等待有时间界限。掉线后从已保存位置继续读取，不重新发送任务。`idle` 仅表示当轮停止，可能是在问问题，不能当作已完成。
-- 商品摘要、钩子和问题来自服务端；展示给用户，回答携带同一 run ID 发回原 session。已确认要求持续有效。
+- 商品摘要、3个钩子候选和问题来自服务端；展示给用户，回答携带同一 run ID 发回原 session。已确认要求持续有效。
 - 服务端报错、鉴权失效、工具审批或素材失效时报告实际阻塞；不自动放行工具审批、不归档/删除会话。素材 URL 更新保持字节内容/SHA-256不变。
 - 完成时必须拿到可下载的 project.json 和 result.json，核对 run ID 与输入指纹。云端 `/mnt/session/outputs/...` 路径或 localhost 预览链接不是交付物；没有附件/file ID/可下载 URL 时要求原会话交付实际文件。
 
@@ -51,6 +51,8 @@ python3 "$CONNECTOR_DIR/scripts/exchange.py" export \
    ```
 
    单独检查退出码，不传 `--force`。成功后完整读回，与 localized-project.json 比较除 revision 外所有内容，确认 revision 恰好增加 1；差异未解决不能称同步成功。
-5. `tik-video-editor-cli status --project-id "$PROJECT_ID"` 获取客户端实际 `projectUrl`。按可用能力检查画面、声音、切点；云端/客户端未做的视听检查标为待验。默认仅交付此预览 URL；用户本次明确要成片才使用 CLI 导出 MP4，继续沿用预览合成器。
+5. `tik-video-editor-cli status --project-id "$PROJECT_ID"` 获取客户端实际 `projectUrl`。按可用能力检查画面、声音、切点；云端/客户端未做的视听检查标为待验。展示服务端经 present 生成的含片段编号的完整脚本，简述主线与叙事逻辑，并交付此预览 URL；用户本次明确要成片才使用 CLI 导出 MP4，继续沿用预览合成器。
 
 后续修改复用同一 session 中的 ASR/索引/审核和映射。每次派发保存新的客户端基线与唯一 run ID；服务端须针对新 request 更新结果关联。会话过期时需恢复服务端中间产物，不能拿 project.json 当作完整语义修改上下文。
+
+实际文件路径解析：将 `media.src` 按路径段 URL 解码后拼接到 CLI 数据目录 `~/.tik-video-editor-cli/` 下。`import-media` 不返回 `preparation`；探查记录只保存 `media` 的 duration/width/height。

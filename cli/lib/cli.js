@@ -5,6 +5,8 @@ const http = require("http");
 const os = require("os");
 const path = require("path");
 const { spawn, spawnSync } = require("child_process");
+const { runMediaAsr, validateAsrLocalPath, readResult } = require("./media");
+const { prepareVideo } = require("./import-video");
 const { pipeline } = require("stream/promises");
 const { URL } = require("url");
 class CliError extends Error {
@@ -120,7 +122,10 @@ function requireProject(project) {
 }
 
 function validateDocument(project) {
-  for (const media of project.media) if (media && media.asrUrl !== undefined) validateAsrUrl(media.asrUrl);
+  for (const media of project.media) {
+    if (media?.asrUrl !== undefined) validateAsrUrl(media.asrUrl);
+    if (media?.asrLocalPath !== undefined) validateAsrLocalPath(media.asrLocalPath);
+  }
   const mediaIds = new Set(project.media.filter((x) => x && typeof x === "object").map((x) => x.id));
   for (const clip of project.clips) {
     if (!clip || typeof clip !== "object") throw new CliError("Each clip must be an object");
@@ -183,6 +188,7 @@ function applyOps(project, ops) {
       const media = clone(operation.media || {});
       if (!media.src || !media.kind) throw new CliError("addMedia requires media.src and media.kind");
       if (media.asrUrl !== undefined) validateAsrUrl(media.asrUrl);
+      if (media.asrLocalPath !== undefined) validateAsrLocalPath(media.asrLocalPath);
       media.id ||= newId("m_"); media.name ||= decodeURIComponent(path.basename(media.src));
       if (result.media.some((item) => item.id === media.id)) throw new CliError("addMedia duplicate media id: " + media.id);
       result.media.push(media); notes.push("+" + media.id);
@@ -211,7 +217,7 @@ function number(value) { return typeof value === "number" ? String(Math.round(va
 function compactProject(id, project) {
   const duration = project.clips.reduce((max, clip) => Math.max(max, Number(clip.start || 0) + Number(clip.duration || 0)), 0);
   const lines = [`Project ${id} | ${project.name || ""} | ${project.width}x${project.height} @${project.fps}fps | ${number(duration)}s | revision ${project.revision || 0}`, `Media ${project.media.length} | Clips ${project.clips.length}`];
-  for (const media of project.media) lines.push(`M ${media.id} ${media.kind} ${media.name || ""}${media.duration == null ? "" : " " + number(media.duration) + "s"}${media.asrUrl ? " asr=yes" : ""}`);
+  for (const media of project.media) lines.push(`M ${media.id} ${media.kind} ${media.name || ""}${media.duration == null ? "" : " " + number(media.duration) + "s"}${media.asrUrl || media.asrLocalPath ? " asr=yes" : ""}`);
   for (const clip of [...project.clips].sort((a, b) => String(a.track).localeCompare(String(b.track)) || Number(a.start) - Number(b.start))) {
     const props = Object.fromEntries(Object.entries(clip.props || {}).filter(([key, value]) => !(key in DEFAULT_PROPS) || DEFAULT_PROPS[key] !== value));
     const extras = [];
@@ -224,7 +230,7 @@ function compactProject(id, project) {
   return lines.join("\n");
 }
 
-const KIND_BY_EXT = new Map(Object.entries({ ".mp4":"video", ".webm":"video", ".mov":"video", ".mkv":"video", ".m4v":"video", ".avi":"video", ".mp3":"audio", ".wav":"audio", ".ogg":"audio", ".m4a":"audio", ".aac":"audio", ".flac":"audio", ".png":"image", ".jpg":"image", ".jpeg":"image", ".gif":"image", ".webp":"image", ".svg":"svg" }));
+const KIND_BY_EXT = new Map(Object.entries({ ".mp4":"video", ".webm":"video", ".mov":"video", ".mkv":"video", ".m4v":"video", ".avi":"video", ".flv":"video", ".ts":"video", ".mts":"video", ".m2ts":"video", ".wmv":"video", ".mp3":"audio", ".wav":"audio", ".ogg":"audio", ".m4a":"audio", ".aac":"audio", ".flac":"audio", ".png":"image", ".jpg":"image", ".jpeg":"image", ".gif":"image", ".webp":"image", ".svg":"svg" }));
 
 function delay(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
 async function download(client, src, target, force) {
@@ -322,14 +328,14 @@ function printHelp() {
 Usage:
   tik-video-editor-cli doctor
   tik-video-editor-cli download --url <http(s)-url> --output <path>
-  tik-video-editor-cli asr --path <absolute-audio-or-video-path> [--output <json-path>] [--api-url <origin>]
+  tik-video-editor-cli media --action asr --project-id <id> --media-id <id> [--output <json-path>] [--api-url <origin>]
   tik-video-editor-cli auth status|login|logout [--api-url <origin>] [--no-browser]
   tik-video-editor-cli list-projects
   tik-video-editor-cli create-project --name <semantic-name>
   tik-video-editor-cli get-project --project-id <id> [--compact]
   tik-video-editor-cli patch-project --project-id <id> --ops '<JSON array>'
   tik-video-editor-cli set-project --project-id <id> --document '<JSON object>' [--force]
-  tik-video-editor-cli import-media --project-id <id> --path <file> [--asr-url <url>]
+  tik-video-editor-cli import-media --project-id <id> --path <file> [--asr-url <url>] [--asr-local-path <json-path>]
   tik-video-editor-cli status [--project-id <id>] [--host <host>] [--port <port>]
   tik-video-editor-cli server start [--host <host>] [--port <port>]
   tik-video-editor-cli export --project-id <id> [--name <name>] [--output <mp4>] [--engine fast|optimized] [--force]
@@ -348,8 +354,8 @@ FABLECUT_BROWSER_DOWNLOAD_BASE_URL overrides the HTTPS browser download base.
 Export requires ffmpeg; optimized also requires ffprobe.
 Doctor checks Node >=18, ffmpeg and ffprobe without installing or starting services.
 Download saves any HTTP(S) file without credentials and refuses existing outputs.
-ASR uses saved CLI credentials and the ASR gateway; --output also downloads and
-validates the result JSON. Without --output it returns only json_url.`);
+Media ASR reuses bound local results or URLs, otherwise transcribes with saved CLI
+credentials. Results are saved in project analysis/asr/ or --output and bound automatically.`);
 }
 
 async function main(argv = process.argv.slice(2)) {
@@ -366,18 +372,12 @@ async function main(argv = process.argv.slice(2)) {
     console.log(JSON.stringify(await require("./operation").withCancellation(signal => require("./download").downloadFile(requireOption(options, "url"), requireOption(options, "output"), { signal })), null, 2));
     return;
   }
-  if (command === "asr") {
-    requireOption(options, "path");
-    for (const key of ["output", "api-url"]) if (options[key] !== undefined) requireOption(options, key);
-    console.log(JSON.stringify(await require("./operation").withCancellation(signal => require("./asr").runAsr(options, { signal })), null, 2));
-    return;
-  }
   if (command === "auth") {
     console.log(JSON.stringify(await require("./auth").runAuth(positionals[1], options), null, 2));
     return;
   }
   if (options["data-dir"] !== undefined) throw new CliError("--data-dir is no longer supported; storage is fixed at ~/.tik-video-editor-cli");
-  const commands = ["server", "status", "list-projects", "create-project", "get-project", "patch-project", "set-project", "import-media", "export"];
+  const commands = ["server", "status", "list-projects", "create-project", "get-project", "patch-project", "set-project", "import-media", "media", "export"];
   if (!commands.includes(command)) throw new CliError("Unknown command: " + command + " (run tik-video-editor-cli --help)");
   if (command === "server" && positionals[1] !== "start") throw new CliError("Use: tik-video-editor-cli server start");
   if (command === "create-project" && options.id !== undefined)
@@ -428,36 +428,66 @@ async function main(argv = process.argv.slice(2)) {
       return { ...project, revision: Number(current.revision || 0) + 1 };
     });
     print({ ok: true, project: id, revision: saved.revision, response: { ok: true, revision: saved.revision } });
+  } else if (command === "media") {
+    const allowed = new Set(["action", "project-id", "media-id", "output", "api-url"]);
+    for (const key of Object.keys(options)) if (!allowed.has(key)) throw new CliError("Unknown option: --" + key);
+    if (positionals.length !== 1 || requireOption(options, "action") !== "asr") throw new CliError("media supports only --action asr");
+    for (const key of ["output", "api-url"]) if (options[key] !== undefined) requireOption(options, key);
+    const id = store.context(requireOption(options, "project-id")).id;
+    const mediaId = requireOption(options, "media-id");
+    print(await require("./operation").withCancellation(signal => runMediaAsr(local, id, mediaId, options, { signal })));
   } else if (command === "import-media") {
+    if (options["existing-asr"] !== undefined) throw new CliError("Unknown option: --existing-asr");
     const id = store.context(requireOption(options, "project-id")).id, source = path.resolve(requireOption(options, "path"));
     const asrUrl = options["asr-url"] === undefined ? undefined : validateAsrUrl(requireOption(options, "asr-url"));
+    const asrLocalPath = options["asr-local-path"] === undefined ? undefined : path.resolve(requireOption(options, "asr-local-path"));
+    if (asrLocalPath !== undefined) readResult(asrLocalPath);
     if (!fs.statSync(source, { throwIfNoEntry: false })?.isFile()) throw new CliError("Media file not found: " + source);
     const kind = KIND_BY_EXT.get(path.extname(source).toLowerCase());
     if (!kind) throw new CliError("Unsupported media extension: " + (path.extname(source) || "(none)"));
     const pp = store.context(id);
-    const base = path.basename(source).replace(/[^\w.\- ()\[\]]+/g, "_").slice(0, 120) || "file";
-    const ext = path.extname(base), stem = path.basename(base, ext);
-    let target = path.join(pp.mediaDir, base), n = 1;
-    for (;;) {
-      try { fs.copyFileSync(source, target, fs.constants.COPYFILE_EXCL); break; }
-      catch (error) { if (error.code !== "EEXIST") throw error; target = path.join(pp.mediaDir, `${stem}_${n++}${ext}`); }
+    let preparation, staging, target;
+    try {
+      let actual = source;
+      if (kind === "video") {
+        staging = fs.mkdtempSync(path.join(pp.mediaDir, ".import-"));
+        preparation = await prepareVideo(source, staging, { existingAsr: asrLocalPath !== undefined || asrUrl !== undefined });
+        actual = preparation.path;
+      }
+      const base = path.basename(source).replace(/[^\w.\- ()\[\]]+/g, "_").slice(0, 120) || "file";
+      const ext = kind === "video" ? path.extname(actual) : path.extname(base), stem = path.basename(base, path.extname(base));
+      let n = 0;
+      for (;;) {
+        target = path.join(pp.mediaDir, `${stem}${n ? "_" + n : ""}${ext}`);
+        try {
+          if (staging) fs.linkSync(actual, target);
+          else fs.copyFileSync(actual, target, fs.constants.COPYFILE_EXCL);
+          break;
+        } catch (error) { if (error.code !== "EEXIST") { target = undefined; throw error; } n++; }
+      }
+      const media = { id: newId("m_"), name: path.basename(target), kind, src: `/projects/${id}/media/${encodeURIComponent(path.basename(target))}` };
+      if (asrUrl !== undefined) media.asrUrl = asrUrl;
+      if (asrLocalPath !== undefined) media.asrLocalPath = asrLocalPath;
+      if (preparation) {
+        Object.assign(media, { duration: preparation.probe.duration, width: preparation.probe.width, height: preparation.probe.height });
+      } else {
+        const probe = spawnSync("ffprobe", ["-v", "error", "-show_entries", "format=duration:stream=width,height", "-of", "json", target], { encoding: "utf8", timeout: 15000 });
+        if (probe.status === 0) {
+          try {
+            const info = JSON.parse(probe.stdout), duration = Number(info.format?.duration);
+            if (Number.isFinite(duration) && duration > 0) media.duration = duration;
+            const visual = info.streams?.find(stream => stream.width && stream.height);
+            if (visual) { media.width = visual.width; media.height = visual.height; }
+          } catch {}
+        }
+      }
+      const project = store.update(id, current => applyOps(current, [{ op: "addMedia", media }]).project);
+      print({ ok: true, project: id, revision: project.revision, media });
+      target = undefined; // Published media belongs to the project after registration.
+    } finally {
+      if (target) fs.rmSync(target, { force: true });
+      if (staging) fs.rmSync(staging, { recursive: true, force: true });
     }
-    const media = { id: newId("m_"), name: path.basename(target), kind, src: `/projects/${id}/media/${encodeURIComponent(path.basename(target))}` };
-    if (asrUrl !== undefined) media.asrUrl = asrUrl;
-    // Probe locally when available; editing never needs the browser to fill duration.
-    const probe = spawnSync("ffprobe", ["-v", "error", "-show_entries", "format=duration:stream=width,height", "-of", "json", target], { encoding: "utf8", timeout: 15000 });
-    if (probe.status === 0) {
-      try {
-        const info = JSON.parse(probe.stdout), duration = Number(info.format?.duration);
-        if (Number.isFinite(duration) && duration > 0) media.duration = duration;
-        const visual = info.streams?.find(stream => stream.width && stream.height);
-        if (visual) { media.width = visual.width; media.height = visual.height; }
-      } catch {}
-    }
-    let project;
-    try { project = store.update(id, current => applyOps(current, [{ op: "addMedia", media }]).project); }
-    catch (error) { fs.rmSync(target, { force: true }); throw error; }
-    print({ ok: true, project: id, revision: project.revision, media });
   } else if (command === "export") {
     const started = process.hrtime.bigint();
     if (options.engine !== undefined && !["fast", "optimized"].includes(options.engine)) throw new CliError("--engine must be fast or optimized");

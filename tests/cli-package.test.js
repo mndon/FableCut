@@ -26,6 +26,7 @@ test("npm tarball ships transformed code and works without build dependencies", 
   const files = packed.files.map(file => file.path);
   assert.ok(files.includes("dist/bin/tik-video-editor-cli.js"));
   assert.ok(files.includes("dist/runtime/app.js"));
+  assert.ok(files.includes("dist/lib/import-video.js"));
   assert.ok(files.includes("LICENSE"));
   assert.ok(files.includes("THIRD-PARTY-NOTICES.md"));
   assert.ok(files.includes("dist/runtime/LICENSE"));
@@ -46,7 +47,7 @@ test("npm tarball ships transformed code and works without build dependencies", 
   assert.match(fs.readFileSync(path.join(installed, manifest.bin["tik-video-editor-cli"]), "utf8"), /^#!\/usr\/bin\/env node\n/);
   const env = { ...process.env, FABLECUT_TEST_CLI_DIR: path.join(installed, "dist") };
   delete env.NODE_TEST_CONTEXT;
-  const result = await run(process.execPath, ["--test", "tests/cli-local.test.js", "cli/tests/auth.test.js", "cli/tests/doctor-download-asr.test.js", "tests/export-browser.test.js", "tests/ui-language.test.js"], { env });
+  const result = await run(process.execPath, ["--test", "tests/cli-local.test.js", "tests/media-asr.test.js", "tests/asr-url.test.js", "tests/import-video.test.js", "cli/tests/auth.test.js", "cli/tests/doctor-download-asr.test.js", "tests/export-browser.test.js", "tests/ui-language.test.js"], { env });
   assert.match(result, /# fail 0/);
   for (const line of result.slice(result.lastIndexOf("1..")).trim().split("\n")) t.diagnostic(line);
 });

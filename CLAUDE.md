@@ -113,11 +113,10 @@ migrated once to `projects/default/`. **Don't assume a project file is beside
 ## Apparel livestream slicing editor
 
 `skills/tik-apparel-livestream-editor-connector/` prepares and aligns client-side
-sources, runs `tik-video-editor-cli asr` / `download` for transcription and reuse,
+sources, runs `tik-video-editor-cli media --action asr` / `download` for transcription and reuse,
 and coordinates `tik-video-editor` for editing.
 The client installs the connector and `tik-video-editor`; the server installs
-`tik-apparel-livestream-editor` and `tik-video-editor`. The connector bundles only
-preparation and transport helpers. Both skills are positioned as apparel sales
+`tik-apparel-livestream-editor` and `tik-video-editor`. The connector bundles only transport helpers. Both skills are positioned as apparel sales
 livestream slicing editors (服装带货直播切片剪辑师), selecting product selling
 points, on-body demonstrations, styling value, and opening hooks from apparel
 livestreams and related product pitches. The connector handles client interaction
@@ -190,12 +189,11 @@ Use `--host` / `--port` (or `HOST` / `PORT`) to configure the server; defaults a
 `127.0.0.1:7777`. `server start` still runs the editor/API server in the foreground.
 `export` automatically ensures the same local server is ready.
 
-`import-media` copies a local file into the project's media directory and
-registers it. When ffprobe is available it also records duration and dimensions;
-otherwise those fields may remain absent until the browser probes the file.
-`--asr-url <http(s)-url>` optionally attaches an existing ASR JSON result as
-`media.asrUrl`; `addMedia` accepts the same optional field. Compact summaries mark
-these media with `asr=yes`; read the full project for URLs.
+`import-media` copies or prepares local media and registers it. Video inputs are
+validated and normalized for browser editing as described below; non-video
+metadata remains optional. `--asr-url <http(s)-url>` saves a bound ASR JSON result
+as `media.asrUrl`; `addMedia` accepts the same field. Compact summaries mark these
+media with `asr=yes`; read the full project for URLs.
 
 The `tik-video-editor` skill verifies the edit, runs `status --project-id <id>`, and
 hands over the returned preview link. It exports only when explicitly requested,
@@ -205,6 +203,66 @@ Use `tik-video-editor-cli --help` for command arguments.
 Files: `index.html` + `style.css` + `app.js` (editor UI), `server.js` (API + hosting),
 `projects/<id>/project.json` (timeline), `projects/<id>/media/` (project footage),
 and `library/` (shared default asset library, see below).
+
+### CLI video import preparation
+
+Video `import-media` requires ffprobe and validates the input before registering it.
+Compatible SDR 8-bit H.264 in MP4/MOV/M4V, and VP8/VP9 in WebM, with compatible
+audio and stream origins within 0.1 seconds, are copied byte-for-byte into the
+project. Other containers are remuxed when possible; origin alignment and audio
+conversion copy the video stream. Silent video is allowed and multiple audio
+tracks are preserved. Non-video imports retain their existing behavior.
+
+Only incompatible video is re-encoded to H.264/yuv420p MP4, preserving resolution
+and native frame timestamps (VFR is not forced to CFR). Odd dimensions are padded
+by at most one pixel for 4:2:0; rotation is applied during encoding. HDR is tone-mapped
+to BT.709 SDR; 10-bit SDR is converted to 8-bit. Necessary audio encoding uses AAC
+192 kbps (Opus 192 kbps for WebM). Hardware encoders are launch-tested: VideoToolbox
+on macOS; NVENC/QSV/AMF on Windows; NVENC/QSV on Linux. Quality modes use VT quality
+80, NVENC CQ 18, QSV quality 18 or AMF QP 18, with a single fallback to x264 CRF 18
+`veryfast`. These settings use different scales and are not a lossless guarantee.
+No resolution reduction or arbitrary bitrate cap is applied. A missing color
+conversion filter, unreadable input, or failed output verification is an error.
+
+Preparation stays in a temporary directory until metadata and, for processed
+video, beginning/middle/end decode checks pass. Failed imports leave the project
+revision and original file unchanged. Progress goes to stderr; stdout remains JSON.
+No browser or local HTTP server is started. Missing color metadata triggers a bounded
+first-frame probe so HDR is not mistaken for SDR. Compliant input needs no full decode;
+packet timestamps are scanned only when reliable video duration/start metadata
+is missing.
+
+Import returns `{ok, project, revision, media}` without `preparation` details.
+Video `media` includes duration, width and height; dimensions describe the displayed
+orientation. Resolve the imported local file by decoding each segment of `media.src`
+and joining it beneath `~/.tik-video-editor-cli/` (the CLI data directory).
+ASR resolves that file automatically from `media.id`. Preparation remains internal
+and adds no fields to project JSON. `--asr-local-path <json-path>`, or supplying
+`--asr-url`, refuses origin-changing alignment; timeline-preserving remux/transcode
+remains available.
+
+For new slicing jobs, import first, then run `media --action asr --project-id <id>
+--media-id <media.id>`. The CLI resolves the imported file, extracts the complete
+first audio track, checks its duration against the video (0.5-second tolerance),
+and cleans temporary audio. It automatically binds `media.asrUrl` and
+`media.asrLocalPath` without importing again or manually replacing the project.
+Skills no longer contain input
+probe/normalization scripts. The connector uploads and hashes the actual imported
+file; cloud imports protect the existing ASR timeline as well.
+
+The apparel slicer uses an explicit ordered `edit_config.modules` list of
+`{key,title}` entries (`hook` first), `groups`, and confirmed `host_speakers`.
+New hooks contain 2–5 complete semantic units from the host; the body can reorder
+whole units by narrative. Legacy configurations without modules retain the prior
+three-module rules and stable indices. Candidate and final-cut redline reviews
+are separate. Duration ratio checks consume imported metadata and optional ranges:
+`R_fill=source/(target*speed)`, `R_material=source/target`; insufficient material
+blocks selection completion, over two hours prompts about processing cost, and a
+ratio below eight prompts about possible shortage. Trusted system context can
+activate first-user defaults (75 seconds, 1.1x, host only, wearer value first), while
+hook choice and unresolved host identity still require the user. Final delivery
+includes the renderer's complete script with project-mapped segment numbers,
+narrative explanation and actual preview URL. Export and subtitles remain opt-in.
 
 ## How Claude Code edits a video
 
@@ -316,6 +374,7 @@ Examples in `library/svg/`: `sparkles.svg` (loop), `lower-third.svg`,
     { "id": "m_abc", "name": "intro.mp4", "kind": "video",  // video|audio|image|svg
       "src": "/projects/my-edit/media/intro.mp4", // project media, or /library/…
       "asrUrl": "https://example.com/intro-asr.json", // optional: original-source ASR JSON
+      "asrLocalPath": "/absolute/path/intro-asr.json", // optional: local ASR JSON
       "duration": 12.4, "width": 1920, "height": 1080,
       "folderId": null }                     // optional: id of a folders[] entry
   ],
@@ -884,8 +943,8 @@ separately. A signed-out auth status still exits with code 0: inspect `logged_in
 ```bash
 tik-video-editor-cli doctor
 tik-video-editor-cli auth status
-tik-video-editor-cli asr --path /absolute/path/source.mp4
-tik-video-editor-cli asr --path /absolute/path/source.mp4 --output ./audio.json
+tik-video-editor-cli media --action asr --project-id <id> --media-id <media-id>
+tik-video-editor-cli media --action asr --project-id <id> --media-id <media-id> --output ./audio.json
 tik-video-editor-cli download --url "https://example.com/file" --output ./file
 ```
 
@@ -897,11 +956,30 @@ stream, with temporary audio cleaned up on completion or failure. Audio metadata
 requires ffprobe; video extraction also requires ffmpeg. Tasks poll every three
 seconds for up to 30 minutes. HTTPS certificate verification remains enabled.
 
-Without `--output`, ASR returns only `{"json_url":"…"}`. With it, ASR downloads
-and validates `rich_result` and `channel`, preserves the original JSON bytes and
-returns `{"json_url":"…","path":"<absolute path>"}`. A null rich_result is valid.
-If transcription succeeds but saving fails, the error retains json_url so it can
-be downloaded again without submitting another transcription task.
+`media --action asr` requires a project and registered audio/video media ID.
+It first validates and reuses `media.asrLocalPath`; if that file is unavailable or
+invalid, it downloads `media.asrUrl`. An unrecoverable existing binding is an error,
+not a reason to submit another transcription. Only media without either binding
+starts a new transcription, using a local project or library file; import remote
+media first. Reuse does not require login or audio extraction.
+
+Results are validated for `rich_result` and `channel` (null rich_result is valid),
+with original JSON bytes preserved. Default output is
+`projects/<id>/analysis/asr/<media-id>-<unique-id>.json`; `--output` overrides it.
+Relative output paths resolve against the working directory. Existing files are
+never overwritten; requesting the currently bound local path simply reuses it.
+Requesting another path copies a valid local result and updates the binding.
+
+A completed transcription immediately saves `asrUrl`; after download validation,
+it saves `asrLocalPath`. Download failure exits nonzero but preserves the URL so
+rerunning the media command retries downloading without another transcription.
+Writes merge into the latest project under its lock and increment revision only
+when fields change. Concurrent deletion, source or ASR binding changes cause a
+conflict; errors include any obtained URL/path for recovery. Network work does
+not hold the project lock. Unrelated edits are preserved.
+
+Success returns `{ok, project, revision, media, path, json_url?}`. A local-only
+result has no invented URL. The top-level ASR command is not available.
 
 `download --url <URL> --output <path>` downloads arbitrary HTTP(S) files,
 including binary data, without CLI credentials or ASR validation. It allows up
@@ -909,7 +987,20 @@ to five HTTP(S) redirects and uses a 60-second download timeout. ASR consumers
 validate downloaded transcripts themselves. Both commands create parent
 directories, resolve relative output paths against the current directory, refuse
 to overwrite existing files and clean up incomplete downloads. Successful download
-returns `{"path":"<absolute path>"}`. These commands need no project, browser or
+returns `{"path":"<absolute path>"}`. Download needs no project. Neither command starts a browser or
 local editor server. The semantic slicer and connector skills run these ASR and
 download commands directly; `tik-video-editor` lists the ASR command and handles
 editor operations. The separate ASR skill has been removed.
+
+### Local ASR binding
+
+`media.asrLocalPath` is an optional absolute local path to the complete source
+ASR JSON. `import-media --asr-local-path <json-path>` validates the existing file
+and stores its absolute path; like `--asr-url`, it protects the source time origin
+during video preparation. `--existing-asr` is unsupported. Both bindings can be
+supplied together. CLI project writes and browser saves preserve both fields;
+compact output shows `asr=yes` when either exists. Old projects need no migration.
+Paths from another device are preserved in project documents but may not exist
+locally; use `asrUrl` to recover a local copy. Trims and speed changes do not alter
+these source-media bindings. Full-document validation checks path syntax, not
+file availability; import and ASR operations validate files when used.

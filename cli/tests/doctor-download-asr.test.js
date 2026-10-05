@@ -209,7 +209,11 @@ test("ASR video temp directory is cleaned after success, extraction failure and 
   const root = temp(t), file = path.join(root, "video.MP4"); fs.writeFileSync(file, "video");
   for (const failure of ["none", "extract", "service"]) {
     let extracted;
-    const deps = { auth: { apiKey: "synthetic-key" }, command: async (_, args) => {
+    const deps = { auth: { apiKey: "synthetic-key" }, command: async (program, args) => {
+      if (program === "ffprobe") return JSON.stringify(args.includes("-show_streams") ? {
+        streams: [{index:0, codec_type:"video", width:16, height:16, avg_frame_rate:"10/1", start_time:"0", duration:"1"},
+                  {index:1, codec_type:"audio", start_time:"0"}], format:{duration:"1"}
+      } : {format:{duration:"1"}});
       extracted = args.at(-1); fs.writeFileSync(extracted, "audio");
       if (failure === "extract") throw new Error("no audio stream");
     }, transcribe: async audio => {
@@ -315,21 +319,29 @@ test("CLI ASR uses persisted credentials, runs the full gateway protocol and sav
     new OpenAPIAuth().save("synthetic-persisted-key");
     const fetchOriginal = global.fetch;
     global.fetch = (url, options) => fetchOriginal(String(url).replace("https://skgw-tik.tttci.com", base), options);
-    require(cliPath).main(["asr", "--path", process.argv[4], "--output", process.argv[5]])
+    const path = require("path"), fs = require("fs");
+    const local = require(path.join(path.dirname(cliPath), "local.js")).initialize(path.resolve(path.dirname(cliPath), "../runtime"));
+    const created = local.store.create("ASR", "asr-test");
+    const pp = local.store.context(created.id);
+    fs.copyFileSync(process.argv[4], path.join(pp.mediaDir, "speech.wav"));
+    local.store.update(created.id, doc => ({...doc, media:[{id:"speech",kind:"audio",src:"/projects/asr-test/media/speech.wav"}]}));
+    require(cliPath).main(["media", "--action", "asr", "--project-id", created.id, "--media-id", "speech", "--output", process.argv[5]])
       .catch(error => { console.error(error.message); process.exitCode = 1; });
   `;
   const result = await new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, ["-e", script, root, path.resolve(__dirname, "../lib/cli.js"), base, file, output],
+    const child = spawn(process.execPath, ["-e", script, root, path.join(cliDir, "lib/cli.js"), base, file, output],
       { env: { ...process.env, TIK_BASE_URL: "", TIK_API_KEY: "obsolete-key-must-not-be-used" } });
     let stdout = "", stderr = "";
     child.stdout.on("data", data => stdout += data); child.stderr.on("data", data => stderr += data);
     child.on("error", reject); child.on("close", code => resolve({ code, stdout, stderr }));
   });
   assert.equal(result.code, 0, result.stderr);
-  assert.deepEqual(JSON.parse(result.stdout), { json_url: base + "/result", path: output });
+  assert.equal(JSON.parse(result.stdout).json_url, base + "/result");
+  assert.equal(JSON.parse(result.stdout).path, output);
+  assert.equal(JSON.parse(result.stdout).media.asrLocalPath, output);
   assert.equal(result.stdout.includes("synthetic-persisted-key"), false);
   assert.equal(fs.readFileSync(output, "utf8"), BODY);
   assert.deepEqual(requests, ["/open/api/v2/toolExtract", "/open/api/v2/toolExtract/12/applyAudioUploadAddresses",
     "/upload", "/open/api/v2/toolExtract/12/audioTask", "/open/api/v2/toolExtract/12", "/result"]);
-  assert.deepEqual(fs.readdirSync(path.join(root, ".tik-video-editor-cli")), ["auth.json"]);
+  assert.ok(!fs.existsSync(path.join(root, ".tik-video-editor-cli", "server.log")));
 });

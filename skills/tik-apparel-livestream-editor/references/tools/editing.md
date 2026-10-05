@@ -10,7 +10,7 @@
 tik-video-editor-cli create-project --name "服装语义切片"
 ```
 
-每个素材使用 `import-media --project-id <真实ID> --path <source.path绝对路径> --asr-url <对应source.asr_url>`；path 必须与转写素材一致，归一化后不导入 original_path、不再次调整 ASR 时间。成功 JSON 保存到该素材的 import.json，用 selection_tools.py bind-media 写入 sources.json。绑定时检查返回的 `media.asrUrl` 与 source 一致。素材 ID 与远端 media.src 均以 CLI 返回的信息为准。复用已注册素材时直接使用其真实 ID 与 asrUrl，不重复导入；旧作业没有 URL 时省略该参数，不伪造地址。
+准备阶段已导入素材并完成 ASR URL 绑定，本阶段复用真实 media ID，不重复导入。source.path、转写与已注册素材必须指向同一时间原点；媒体准备只通过 CLI import-media 执行。已有工程素材直接复用，对照最新 media.src 与 asrUrl，旧作业无 URL 时不伪造。详见 pipeline-io.md。
 
 生成操作前运行 `get-project --project-id <真实ID>` 保存完整原生项目文档为 project.json，记录实际 revision。紧凑摘要只供快速检查，不能代替完整项目作为脚本输入。
 
